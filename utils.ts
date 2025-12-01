@@ -42,16 +42,23 @@ export class SoundManager {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AudioContextClass();
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = 0.25; // Master volume
+      this.masterGain.gain.value = 0.2; // Reduced volume
       this.masterGain.connect(this.ctx.destination);
     }
-    if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+  }
+
+  resumeContext() {
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(e => console.error("Audio resume failed", e));
     }
   }
 
   private playTone(freq: number, type: OscillatorType, duration: number, vol: number = 1, slideTo?: number) {
     if (!this.ctx || !this.masterGain) return;
+    
+    // Ensure context is running
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     
@@ -130,7 +137,6 @@ export class SoundManager {
   playGameOver() {
     if (!this.ctx || !this.masterGain) return;
     
-    // "Power down" pitch drop (Triangle Wave - softer)
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'triangle'; 
@@ -145,7 +151,6 @@ export class SoundManager {
     osc.start();
     osc.stop(this.ctx.currentTime + 0.6);
 
-    // Low Thud (Noise)
     const bufferSize = this.ctx.sampleRate * 0.5;
     const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
     const data = buffer.getChannelData(0);

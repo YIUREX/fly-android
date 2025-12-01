@@ -134,7 +134,7 @@ export const Shop: React.FC<ShopProps> = ({
   };
 
   return (
-    <div className="absolute inset-0 z-20 flex flex-col items-center p-4 overflow-y-auto backdrop-blur-md bg-slate-900/95">
+    <div className="absolute inset-0 z-20 flex flex-col items-center p-4 overflow-y-auto backdrop-blur-md bg-slate-900/95 touch-action-pan-y">
       <div className="w-full max-w-2xl rounded-3xl p-6 shadow-2xl border border-white/10 bg-white/5 mt-10">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-4xl font-bold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">Hangar</h2>
@@ -144,7 +144,7 @@ export const Shop: React.FC<ShopProps> = ({
         </div>
 
         {/* TABS */}
-        <div className="flex gap-2 mb-6 p-1 bg-black/20 rounded-xl overflow-x-auto">
+        <div className="flex gap-2 mb-6 p-1 bg-black/20 rounded-xl overflow-x-auto touch-action-pan-x">
             <button onClick={() => setActiveTab('skin')} className={`flex-1 py-2 px-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'skin' ? 'bg-blue-500 text-white shadow-lg' : 'text-white/50 hover:bg-white/5'}`}>AVIONES</button>
             <button onClick={() => setActiveTab('trail')} className={`flex-1 py-2 px-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'trail' ? 'bg-purple-500 text-white shadow-lg' : 'text-white/50 hover:bg-white/5'}`}>ESTELAS</button>
             <button onClick={() => setActiveTab('effect')} className={`flex-1 py-2 px-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'effect' ? 'bg-red-500 text-white shadow-lg' : 'text-white/50 hover:bg-white/5'}`}>EFECTOS</button>

@@ -17,7 +17,7 @@ interface GameCanvasProps {
   skyState: SkyState;
   reviveSignal: number;
   onMissionUpdate: (type: string, amount: number) => void;
-  initialBoosts: BoostType[]; // Boosts to apply on start
+  initialBoosts: BoostType[];
 }
 
 const GameCanvasComponent: React.FC<GameCanvasProps> = ({ 
@@ -38,6 +38,8 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(0);
   const prevGameState = useRef<GameState>(gameState);
+  const lastTimeRef = useRef<number>(0);
+  const accumulatorRef = useRef<number>(0);
   
   const joystickRef = useRef<{ active: boolean; origin: Vector; current: Vector } | null>(null);
   const cameraRef = useRef<Vector>({ x: 0, y: 0 });
@@ -134,6 +136,12 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     gameTimeRef.current = 0;
     cycleFrameRef.current = 0;
     
+    lastTimeRef.current = performance.now();
+    accumulatorRef.current = 0;
+    
+    // Only re-init background if starting fresh to keep randomness, 
+    // but if coming from menu we might want to keep it? 
+    // Let's re-init to ensure player starts in a clean zone.
     initBackground();
 
     setScore(0);
@@ -168,6 +176,11 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     setActivePowerUps(active);
 
   }, [currentSkinId, currentTrailId, currentDeathEffectId, setScore, setCoinsCollected, setActivePowerUps, initBackground, initialBoosts]);
+
+  useEffect(() => {
+    // Initial background setup on mount
+    initBackground();
+  }, [initBackground]);
 
   useEffect(() => {
     if (reviveSignal > 0 && playerRef.current.dead) {
@@ -354,13 +367,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     }
   };
 
-  const update = useCallback(() => {
-    if (!canvasRef.current || gameState !== GameState.PLAYING) return;
-    const canvas = canvasRef.current;
-    const { width, height } = canvas;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
+  const fixedUpdate = useCallback((width: number, height: number) => {
     frameCountRef.current++;
     gameTimeRef.current += 1/60;
     
@@ -411,6 +418,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     };
     updateTrail(p, playerTailPos, 2);
 
+    // Allies Update
     alliesRef.current.forEach(ally => {
         let nearestDist = 9999;
         let target: Missile | null = null;
@@ -554,325 +562,354 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
       pt.life -= 0.03;
     });
     particlesRef.current = particlesRef.current.filter(pt => pt.life > 0);
+  }, [setGameState, setScore, setCoinsCollected, addCoins, setActivePowerUps, skyState, onMissionUpdate]);
 
-    ctx.clearRect(0, 0, width, height);
+  const update = useCallback((time: number) => {
+    if (!canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const { width, height } = canvas;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    drawBackground(ctx, width, height);
+    // Delta Time Logic for 60FPS lock
+    const frameDuration = 1000 / 60; 
+    let dt = time - lastTimeRef.current;
+    if (dt > 100) dt = 100; // Cap dt to prevent spiral of death if tab was inactive
+    lastTimeRef.current = time;
+    accumulatorRef.current += dt;
 
-    const drawTrail = (trail: Vector[], style: TrailStyle, lineWidth: number, currentPos?: Vector) => {
-      if (trail.length === 0 && !currentPos) return;
-      const color = style.color === 'rainbow' ? `hsl(${frameCountRef.current * 2 % 360}, 70%, 50%)` : (style.color || 'rgba(255,255,255,0.4)');
-      
-      ctx.fillStyle = color;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = lineWidth;
-      if (style.glow) {
-          ctx.shadowBlur = 10;
-          ctx.shadowColor = color;
-      }
-
-      if (style.type === 'bubbles') {
-          trail.forEach((pos, i) => {
-              if (i % 3 === 0) {
-                  const size = (i / trail.length) * lineWidth;
-                  const screen = worldToScreen(pos, width, height);
-                  ctx.beginPath();
-                  ctx.arc(screen.x, screen.y, size, 0, Math.PI*2);
-                  ctx.fill();
-              }
-          });
-      } else if (style.type === 'pixel') {
-          trail.forEach((pos, i) => {
-              if (i % 2 === 0) {
-                  const size = lineWidth * 1.5;
-                  const screen = worldToScreen(pos, width, height);
-                  ctx.fillRect(screen.x - size/2, screen.y - size/2, size, size);
-              }
-          });
-      } else if (style.type === 'sparkle') {
-          trail.forEach((pos, i) => {
-              if (i % 4 === 0) {
-                const screen = worldToScreen(pos, width, height);
-                const size = lineWidth;
-                ctx.beginPath();
-                ctx.moveTo(screen.x - size, screen.y);
-                ctx.lineTo(screen.x + size, screen.y);
-                ctx.moveTo(screen.x, screen.y - size);
-                ctx.lineTo(screen.x, screen.y + size);
-                ctx.stroke();
-              }
-          });
-      } else if (style.type === 'electric') {
-          ctx.beginPath();
-          if (trail.length > 0) {
-              const start = worldToScreen(trail[0], width, height);
-              ctx.moveTo(start.x, start.y);
-          }
-          for (let i = 1; i < trail.length; i++) {
-              const p = worldToScreen(trail[i], width, height);
-              const jitter = Math.random() * 4 - 2;
-              ctx.lineTo(p.x + jitter, p.y + jitter);
-          }
-          if (currentPos) {
-              const end = worldToScreen(currentPos, width, height);
-              ctx.lineTo(end.x, end.y);
-          }
-          ctx.stroke();
-      } else {
-          // Default Line
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          ctx.beginPath();
-          if (trail.length > 0) {
-            const start = worldToScreen(trail[0], width, height);
-            ctx.moveTo(start.x, start.y);
-          } else if (currentPos) {
-            const start = worldToScreen(currentPos, width, height);
-            ctx.moveTo(start.x, start.y);
-          }
-          for (let i = 1; i < trail.length; i++) {
-            const p = worldToScreen(trail[i], width, height);
-            ctx.lineTo(p.x, p.y);
-          }
-          if (currentPos) {
-              const end = worldToScreen(currentPos, width, height);
-              ctx.lineTo(end.x, end.y);
-          }
-          ctx.stroke();
-      }
-      ctx.shadowBlur = 0;
-    };
-
-    if (!p.dead) {
-      const playerTailOffset = 18;
-      const playerTailPos = {
-        x: p.pos.x - Math.cos(p.angle) * playerTailOffset,
-        y: p.pos.y - Math.sin(p.angle) * playerTailOffset
-      };
-
-      const trailStyle = TRAILS.find(t => t.id === p.trailId) || TRAILS[0];
-      const isBoosting = p.speedBoostActive;
-      const trailWidth = (isBoosting ? 14 : 10) * trailStyle.widthScale;
-
-      drawTrail(p.trail, trailStyle, trailWidth, playerTailPos);
-      
-      const screenPos = worldToScreen(p.pos, width, height);
-      ctx.save();
-      ctx.translate(screenPos.x, screenPos.y);
-      ctx.rotate(p.angle + Math.PI / 2);
-
-      const skin = SKINS.find(s => s.id === p.skinId) || SKINS[0];
-      
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.beginPath();
-      ctx.moveTo(0, -20);
-      ctx.lineTo(15, 20);
-      ctx.lineTo(0, 15);
-      ctx.lineTo(-15, 20);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.fillStyle = skin.color;
-      ctx.strokeStyle = skin.secondaryColor;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, -20);
-      ctx.lineTo(15, 20);
-      ctx.lineTo(0, 15);
-      ctx.lineTo(-15, 20);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = 'rgba(0,0,0,0.1)';
-      ctx.beginPath();
-      ctx.moveTo(0, -20);
-      ctx.lineTo(0, 15);
-      ctx.lineTo(5, 20);
-      ctx.closePath();
-      ctx.fill();
-
-      if (p.shieldActive) {
-        ctx.beginPath();
-        ctx.strokeStyle = '#60a5fa';
-        ctx.lineWidth = 3;
-        ctx.arc(0, 0, 30, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(96, 165, 250, 0.2)';
-        ctx.fill();
-      }
-      if (p.magnetActive) {
-        ctx.beginPath();
-        ctx.strokeStyle = '#c084fc';
-        ctx.lineWidth = 2;
-        ctx.arc(0, 0, 40 + Math.sin(frameCountRef.current * 0.2) * 5, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.restore();
+    // Fixed Update Loop (Logic)
+    while (accumulatorRef.current >= frameDuration) {
+        if (gameState === GameState.PLAYING) {
+            fixedUpdate(width, height);
+        } else {
+            // Animate background elements in Menu/Pause
+            gameTimeRef.current += 1/60;
+            cloudsRef.current.forEach(c => {
+                 c.x -= c.speed * 0.5; // Simulate gentle wind
+            });
+        }
+        accumulatorRef.current -= frameDuration;
     }
 
-    alliesRef.current.forEach(ally => {
-        const allyTailPos = {
-            x: ally.pos.x - Math.cos(ally.angle) * 8,
-            y: ally.pos.y - Math.sin(ally.angle) * 8
+    // Drawing Loop
+    ctx.clearRect(0, 0, width, height);
+    drawBackground(ctx, width, height);
+
+    if (gameState === GameState.PLAYING || gameState === GameState.PAUSED) {
+        const drawTrail = (trail: Vector[], style: TrailStyle, lineWidth: number, currentPos?: Vector) => {
+            if (trail.length === 0 && !currentPos) return;
+            const color = style.color === 'rainbow' ? `hsl(${frameCountRef.current * 2 % 360}, 70%, 50%)` : (style.color || 'rgba(255,255,255,0.4)');
+            
+            ctx.fillStyle = color;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            if (style.glow) {
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = color;
+            }
+
+            if (style.type === 'bubbles') {
+                trail.forEach((pos, i) => {
+                    if (i % 3 === 0) {
+                        const size = (i / trail.length) * lineWidth;
+                        const screen = worldToScreen(pos, width, height);
+                        ctx.beginPath();
+                        ctx.arc(screen.x, screen.y, size, 0, Math.PI*2);
+                        ctx.fill();
+                    }
+                });
+            } else if (style.type === 'pixel') {
+                trail.forEach((pos, i) => {
+                    if (i % 2 === 0) {
+                        const size = lineWidth * 1.5;
+                        const screen = worldToScreen(pos, width, height);
+                        ctx.fillRect(screen.x - size/2, screen.y - size/2, size, size);
+                    }
+                });
+            } else if (style.type === 'sparkle') {
+                trail.forEach((pos, i) => {
+                    if (i % 4 === 0) {
+                        const screen = worldToScreen(pos, width, height);
+                        const size = lineWidth;
+                        ctx.beginPath();
+                        ctx.moveTo(screen.x - size, screen.y);
+                        ctx.lineTo(screen.x + size, screen.y);
+                        ctx.moveTo(screen.x, screen.y - size);
+                        ctx.lineTo(screen.x, screen.y + size);
+                        ctx.stroke();
+                    }
+                });
+            } else if (style.type === 'electric') {
+                ctx.beginPath();
+                if (trail.length > 0) {
+                    const start = worldToScreen(trail[0], width, height);
+                    ctx.moveTo(start.x, start.y);
+                }
+                for (let i = 1; i < trail.length; i++) {
+                    const p = worldToScreen(trail[i], width, height);
+                    const jitter = Math.random() * 4 - 2;
+                    ctx.lineTo(p.x + jitter, p.y + jitter);
+                }
+                if (currentPos) {
+                    const end = worldToScreen(currentPos, width, height);
+                    ctx.lineTo(end.x, end.y);
+                }
+                ctx.stroke();
+            } else {
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.beginPath();
+                if (trail.length > 0) {
+                    const start = worldToScreen(trail[0], width, height);
+                    ctx.moveTo(start.x, start.y);
+                } else if (currentPos) {
+                    const start = worldToScreen(currentPos, width, height);
+                    ctx.moveTo(start.x, start.y);
+                }
+                for (let i = 1; i < trail.length; i++) {
+                    const p = worldToScreen(trail[i], width, height);
+                    ctx.lineTo(p.x, p.y);
+                }
+                if (currentPos) {
+                    const end = worldToScreen(currentPos, width, height);
+                    ctx.lineTo(end.x, end.y);
+                }
+                ctx.stroke();
+            }
+            ctx.shadowBlur = 0;
         };
-        drawTrail(ally.trail, TRAILS[0], 4, allyTailPos); 
+
+        const p = playerRef.current;
+        if (!p.dead) {
+        const playerTailOffset = 18;
+        const playerTailPos = {
+            x: p.pos.x - Math.cos(p.angle) * playerTailOffset,
+            y: p.pos.y - Math.sin(p.angle) * playerTailOffset
+        };
+
+        const trailStyle = TRAILS.find(t => t.id === p.trailId) || TRAILS[0];
+        const isBoosting = p.speedBoostActive;
+        const trailWidth = (isBoosting ? 14 : 10) * trailStyle.widthScale;
+
+        drawTrail(p.trail, trailStyle, trailWidth, playerTailPos);
         
-        const screenPos = worldToScreen(ally.pos, width, height);
+        const screenPos = worldToScreen(p.pos, width, height);
         ctx.save();
         ctx.translate(screenPos.x, screenPos.y);
-        ctx.rotate(ally.angle + Math.PI / 2);
-        ctx.fillStyle = '#22d3ee';
+        ctx.rotate(p.angle + Math.PI / 2);
+
+        const skin = SKINS.find(s => s.id === p.skinId) || SKINS[0];
+        
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
         ctx.beginPath();
-        ctx.moveTo(0, -10);
-        ctx.lineTo(6, 6);
-        ctx.lineTo(0, 3);
-        ctx.lineTo(-6, 6);
+        ctx.moveTo(0, -20);
+        ctx.lineTo(15, 20);
+        ctx.lineTo(0, 15);
+        ctx.lineTo(-15, 20);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = skin.color;
+        ctx.strokeStyle = skin.secondaryColor;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -20);
+        ctx.lineTo(15, 20);
+        ctx.lineTo(0, 15);
+        ctx.lineTo(-15, 20);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(0,0,0,0.1)';
+        ctx.beginPath();
+        ctx.moveTo(0, -20);
+        ctx.lineTo(0, 15);
+        ctx.lineTo(5, 20);
+        ctx.closePath();
+        ctx.fill();
+
+        if (p.shieldActive) {
+            ctx.beginPath();
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 3;
+            ctx.arc(0, 0, 30, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(96, 165, 250, 0.2)';
+            ctx.fill();
+        }
+        if (p.magnetActive) {
+            ctx.beginPath();
+            ctx.strokeStyle = '#c084fc';
+            ctx.lineWidth = 2;
+            ctx.arc(0, 0, 40 + Math.sin(frameCountRef.current * 0.2) * 5, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
+        }
+
+        alliesRef.current.forEach(ally => {
+            const allyTailPos = {
+                x: ally.pos.x - Math.cos(ally.angle) * 8,
+                y: ally.pos.y - Math.sin(ally.angle) * 8
+            };
+            drawTrail(ally.trail, TRAILS[0], 4, allyTailPos); 
+            
+            const screenPos = worldToScreen(ally.pos, width, height);
+            ctx.save();
+            ctx.translate(screenPos.x, screenPos.y);
+            ctx.rotate(ally.angle + Math.PI / 2);
+            ctx.fillStyle = '#22d3ee';
+            ctx.beginPath();
+            ctx.moveTo(0, -10);
+            ctx.lineTo(6, 6);
+            ctx.lineTo(0, 3);
+            ctx.lineTo(-6, 6);
+            ctx.fill();
+            ctx.restore();
+        });
+
+        missilesRef.current.forEach(m => {
+        const missileTailOffset = 10; 
+        const missileTailPos = {
+            x: m.pos.x - Math.cos(m.angle) * missileTailOffset,
+            y: m.pos.y - Math.sin(m.angle) * missileTailOffset
+        };
+        drawTrail(m.trail, {id:'missile', name:'', price:0, color:'rgba(248, 113, 113, 0.6)', widthScale:1, glow:false, type:'line'}, 6, missileTailPos);
+        
+        const screenPos = worldToScreen(m.pos, width, height);
+        ctx.save();
+        ctx.translate(screenPos.x, screenPos.y);
+        ctx.rotate(m.angle + Math.PI / 2);
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath();
+        ctx.moveTo(0, -14);
+        ctx.lineTo(7, 7);
+        ctx.lineTo(0, 4);
+        ctx.lineTo(-7, 7);
+        ctx.closePath();
         ctx.fill();
         ctx.restore();
-    });
+        });
 
-    missilesRef.current.forEach(m => {
-      const missileTailOffset = 10; 
-      const missileTailPos = {
-        x: m.pos.x - Math.cos(m.angle) * missileTailOffset,
-        y: m.pos.y - Math.sin(m.angle) * missileTailOffset
-      };
-      drawTrail(m.trail, {id:'missile', name:'', price:0, color:'rgba(248, 113, 113, 0.6)', widthScale:1, glow:false, type:'line'}, 6, missileTailPos);
-      
-      const screenPos = worldToScreen(m.pos, width, height);
-      ctx.save();
-      ctx.translate(screenPos.x, screenPos.y);
-      ctx.rotate(m.angle + Math.PI / 2);
-      ctx.fillStyle = '#ef4444';
-      ctx.beginPath();
-      ctx.moveTo(0, -14);
-      ctx.lineTo(7, 7);
-      ctx.lineTo(0, 4);
-      ctx.lineTo(-7, 7);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    });
+        coinsRef.current.forEach(c => {
+        const screenPos = worldToScreen(c.pos, width, height);
+        ctx.save();
+        ctx.translate(screenPos.x, screenPos.y);
+        const scale = 1 + Math.sin(frameCountRef.current * 0.1) * 0.1;
+        ctx.scale(scale, scale);
+        ctx.beginPath();
+        ctx.fillStyle = '#fbbf24';
+        ctx.arc(0, 0, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = '#f59e0b';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('$', 0, 1);
+        ctx.restore();
+        });
 
-    coinsRef.current.forEach(c => {
-      const screenPos = worldToScreen(c.pos, width, height);
-      ctx.save();
-      ctx.translate(screenPos.x, screenPos.y);
-      const scale = 1 + Math.sin(frameCountRef.current * 0.1) * 0.1;
-      ctx.scale(scale, scale);
-      ctx.beginPath();
-      ctx.fillStyle = '#fbbf24';
-      ctx.arc(0, 0, 10, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.fillStyle = '#f59e0b';
-      ctx.font = 'bold 12px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('$', 0, 1);
-      ctx.restore();
-    });
+        // Vector PowerUps
+        powerUpsRef.current.forEach(pu => {
+        const screenPos = worldToScreen(pu.pos, width, height);
+        ctx.save();
+        ctx.translate(screenPos.x, screenPos.y);
+        
+        ctx.beginPath();
+        ctx.fillStyle = POWERUP_COLORS[pu.type];
+        ctx.arc(0, 0, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
-    // Vector PowerUps
-    powerUpsRef.current.forEach(pu => {
-      const screenPos = worldToScreen(pu.pos, width, height);
-      ctx.save();
-      ctx.translate(screenPos.x, screenPos.y);
-      
-      // Circle Bg
-      ctx.beginPath();
-      ctx.fillStyle = POWERUP_COLORS[pu.type];
-      ctx.arc(0, 0, 14, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        if (pu.type === PowerUpType.SHIELD) {
+            ctx.beginPath();
+            ctx.moveTo(0, -6);
+            ctx.quadraticCurveTo(6, -6, 6, 0);
+            ctx.quadraticCurveTo(6, 6, 0, 8);
+            ctx.quadraticCurveTo(-6, 6, -6, 0);
+            ctx.quadraticCurveTo(-6, -6, 0, -6);
+            ctx.stroke();
+        } else if (pu.type === PowerUpType.SPEED) {
+            ctx.beginPath();
+            ctx.moveTo(2, -6);
+            ctx.lineTo(-4, 0);
+            ctx.lineTo(0, 0);
+            ctx.lineTo(-2, 6);
+            ctx.lineTo(4, 0);
+            ctx.lineTo(0, 0);
+            ctx.closePath();
+            ctx.fill();
+        } else if (pu.type === PowerUpType.MAGNET) {
+            ctx.beginPath();
+            ctx.arc(0, -2, 5, Math.PI, 0);
+            ctx.lineTo(5, 4);
+            ctx.lineTo(2, 4);
+            ctx.lineTo(2, -2);
+            ctx.arc(0, -2, 2, 0, Math.PI, true);
+            ctx.lineTo(-2, 4);
+            ctx.lineTo(-5, 4);
+            ctx.closePath();
+            ctx.fill();
+        } else if (pu.type === PowerUpType.SHOCKWAVE) {
+            ctx.beginPath();
+            ctx.arc(0, 0, 3, 0, Math.PI*2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, 0, 7, 0, Math.PI*2);
+            ctx.stroke();
+        } else if (pu.type === PowerUpType.ALLIES) {
+            ctx.beginPath();
+            ctx.moveTo(0, -5); ctx.lineTo(3, 3); ctx.lineTo(-3, 3); ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(-5, 0); ctx.lineTo(-2, 5); ctx.lineTo(-8, 5); ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(5, 0); ctx.lineTo(8, 5); ctx.lineTo(2, 5); ctx.fill();
+        }
+        
+        ctx.restore();
+        });
 
-      // Icon
-      ctx.fillStyle = 'white';
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      
-      if (pu.type === PowerUpType.SHIELD) {
-          ctx.beginPath();
-          ctx.moveTo(0, -6);
-          ctx.quadraticCurveTo(6, -6, 6, 0);
-          ctx.quadraticCurveTo(6, 6, 0, 8);
-          ctx.quadraticCurveTo(-6, 6, -6, 0);
-          ctx.quadraticCurveTo(-6, -6, 0, -6);
-          ctx.stroke();
-      } else if (pu.type === PowerUpType.SPEED) {
-          ctx.beginPath();
-          ctx.moveTo(2, -6);
-          ctx.lineTo(-4, 0);
-          ctx.lineTo(0, 0);
-          ctx.lineTo(-2, 6);
-          ctx.lineTo(4, 0);
-          ctx.lineTo(0, 0);
-          ctx.closePath();
-          ctx.fill();
-      } else if (pu.type === PowerUpType.MAGNET) {
-          ctx.beginPath();
-          ctx.arc(0, -2, 5, Math.PI, 0);
-          ctx.lineTo(5, 4);
-          ctx.lineTo(2, 4);
-          ctx.lineTo(2, -2);
-          ctx.arc(0, -2, 2, 0, Math.PI, true);
-          ctx.lineTo(-2, 4);
-          ctx.lineTo(-5, 4);
-          ctx.closePath();
-          ctx.fill();
-      } else if (pu.type === PowerUpType.SHOCKWAVE) {
-          ctx.beginPath();
-          ctx.arc(0, 0, 3, 0, Math.PI*2);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(0, 0, 7, 0, Math.PI*2);
-          ctx.stroke();
-      } else if (pu.type === PowerUpType.ALLIES) {
-          ctx.beginPath();
-          ctx.moveTo(0, -5); ctx.lineTo(3, 3); ctx.lineTo(-3, 3); ctx.fill();
-          ctx.beginPath();
-          ctx.moveTo(-5, 0); ctx.lineTo(-2, 5); ctx.lineTo(-8, 5); ctx.fill();
-          ctx.beginPath();
-          ctx.moveTo(5, 0); ctx.lineTo(8, 5); ctx.lineTo(2, 5); ctx.fill();
-      }
-      
-      ctx.restore();
-    });
+        particlesRef.current.forEach(pt => {
+        const screenPos = worldToScreen(pt.pos, width, height);
+        ctx.globalAlpha = pt.life;
+        ctx.fillStyle = pt.color;
+        ctx.beginPath();
+        ctx.arc(screenPos.x, screenPos.y, pt.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        });
 
-    particlesRef.current.forEach(pt => {
-      const screenPos = worldToScreen(pt.pos, width, height);
-      ctx.globalAlpha = pt.life;
-      ctx.fillStyle = pt.color;
-      ctx.beginPath();
-      ctx.arc(screenPos.x, screenPos.y, pt.size, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
-    });
-
-    if (joystickRef.current && joystickRef.current.active) {
-      const { origin, current } = joystickRef.current;
-      ctx.beginPath();
-      ctx.arc(origin.x, origin.y, 40, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.lineWidth = 2;
-      ctx.fill();
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(current.x, current.y, 20, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.fill();
+        if (joystickRef.current && joystickRef.current.active) {
+        const { origin, current } = joystickRef.current;
+        ctx.beginPath();
+        ctx.arc(origin.x, origin.y, 40, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(current.x, current.y, 20, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.fill();
+        }
     }
 
     requestRef.current = requestAnimationFrame(update);
-  }, [gameState, skyState, setGameState, setScore, setCoinsCollected, addCoins, setActivePowerUps, currentSkinId, currentTrailId, currentDeathEffectId, reviveSignal, onMissionUpdate, initialBoosts]);
+  }, [gameState, fixedUpdate]);
 
   const drawBackground = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     let topColor = SKY_COLORS.DAY_TOP;
@@ -940,15 +977,15 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
   };
 
   useEffect(() => {
-    if (gameState === GameState.PLAYING) {
-      if ((prevGameState.current === GameState.MENU || prevGameState.current === GameState.GAMEOVER) && reviveSignal === 0) {
+    // Start loop immediately
+    lastTimeRef.current = performance.now();
+    accumulatorRef.current = 0;
+    requestRef.current = requestAnimationFrame(update);
+    
+    if (gameState === GameState.PLAYING && prevGameState.current !== GameState.PLAYING && reviveSignal === 0) {
         initGame();
-      }
-      requestRef.current = requestAnimationFrame(update);
-    } else {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
-      joystickRef.current = null;
     }
+    
     prevGameState.current = gameState;
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);

@@ -4,7 +4,7 @@ import { UIOverlay } from './components/UIOverlay';
 import { Shop } from './components/Shop';
 import { GameState, PowerUpType, SkyState, Mission, Achievement, GameStats, BoostType } from './types';
 import { ACHIEVEMENTS_LIST } from './constants';
-import { generateDailyMissions } from './utils';
+import { generateDailyMissions, soundManager } from './utils';
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
@@ -181,6 +181,7 @@ const App: React.FC = () => {
   };
 
   const startGame = () => {
+      soundManager.resumeContext();
       // Consume boosts
       const newInventory = { ...boostInventory };
       activeBoosts.forEach(b => {
@@ -189,6 +190,12 @@ const App: React.FC = () => {
       setBoostInventory(newInventory);
       setGameState(GameState.PLAYING);
       setReviveSignal(0);
+  };
+
+  const handleRestart = () => {
+    soundManager.resumeContext();
+    setGameState(GameState.PLAYING);
+    setReviveSignal(0);
   };
 
   const addCoins = useCallback((amount: number) => {
@@ -230,10 +237,12 @@ const App: React.FC = () => {
               revivePlayer();
           }
       } else {
+          // Strict production mode: Only call Android interface.
+          // No fallback to simulate ad watching.
           if (window.Android && window.Android.showRewardedAd) {
               window.Android.showRewardedAd();
           } else {
-              setTimeout(() => revivePlayer(), 1000);
+              console.log('Ad requested but Android interface not found.');
           }
       }
   };
@@ -266,8 +275,11 @@ const App: React.FC = () => {
         activePowerUps={activePowerUps}
         onStart={startGame}
         onOpenShop={() => setGameState(GameState.SHOP)}
-        onRestart={() => setGameState(GameState.PLAYING)}
-        onMenu={() => setGameState(GameState.MENU)}
+        onRestart={handleRestart}
+        onMenu={() => {
+            setGameState(GameState.MENU);
+            setReviveSignal(0);
+        }}
         onPause={() => setGameState(GameState.PAUSED)}
         onResume={() => setGameState(GameState.PLAYING)}
         skyState={skyState}
