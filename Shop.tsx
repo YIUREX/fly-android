@@ -64,7 +64,9 @@ export const Shop: React.FC<ShopProps> = ({
           {/* Visual Placeholder */}
           <div className="w-16 h-16 relative flex items-center justify-center bg-black/10 rounded-lg overflow-hidden">
              {activeTab === 'skin' && (
-                <div style={{color: item.color}} className="font-bold text-2xl">✈️</div>
+                <svg viewBox="0 0 30 40" className="w-10 h-10 drop-shadow-md">
+                   <path d="M15 0 L30 40 L15 35 L0 40 Z" fill={item.color} stroke={item.secondaryColor} strokeWidth="2" />
+                </svg>
              )}
              {activeTab === 'trail' && (
                 <div style={{background: item.color === 'rainbow' ? 'linear-gradient(to right, red, orange, yellow, green, blue)' : item.color}} className="w-10 h-2 rounded-full"></div>

@@ -24,9 +24,9 @@ export const rectIntersect = (r1: any, r2: any) => {
 // --- MISSION GENERATOR ---
 export const generateDailyMissions = (): Mission[] => {
   const missions: Mission[] = [
-    { id: 1, description: 'Recoge 50 monedas', target: 50, current: 0, completed: false, reward: 100, type: 'coins' },
-    { id: 2, description: 'Llega a 1000 puntos', target: 1000, current: 0, completed: false, reward: 200, type: 'score' },
-    { id: 3, description: 'Sobrevive 60 segundos', target: 60, current: 0, completed: false, reward: 150, type: 'time' }
+    { id: 1, description: 'Recoge 50 monedas', target: 50, current: 0, completed: false, reward: 50, type: 'coins' },
+    { id: 2, description: 'Llega a 1000 puntos', target: 1000, current: 0, completed: false, reward: 100, type: 'score' },
+    { id: 3, description: 'Sobrevive 60 segundos', target: 60, current: 0, completed: false, reward: 75, type: 'time' }
   ];
   return missions;
 };

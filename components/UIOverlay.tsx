@@ -280,7 +280,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
       {/* MISSIONS & ACHIEVEMENTS MODAL */}
       {gameState === GameState.MISSIONS && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-auto z-50 bg-slate-900/95 backdrop-blur-xl p-4 touch-action-pan-y overflow-y-auto">
-              <div className="w-full max-w-2xl bg-white/5 rounded-3xl border border-white/10 p-6 shadow-2xl">
+              <div className="w-full max-w-2xl bg-white/5 rounded-3xl border border-white/10 p-6 shadow-2xl mt-10 mb-10">
                   <div className="flex justify-between items-center mb-6">
                       <h2 className="text-3xl font-bold text-white">Misiones y Logros</h2>
                       <button onClick={onMenu} className="bg-white/10 w-10 h-10 rounded-full flex items-center justify-center text-white hover:bg-white/20">✕</button>
@@ -330,6 +330,13 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                           ))}
                       </div>
                   </div>
+
+                  <button 
+                    onClick={onMenu}
+                    className="mt-8 w-full py-4 bg-red-500/80 hover:bg-red-500 text-white rounded-xl font-bold text-xl shadow-lg transition-all border-b-4 border-red-700 active:border-b-0 active:translate-y-1"
+                  >
+                    VOLVER AL MENÚ
+                  </button>
               </div>
           </div>
       )}

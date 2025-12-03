@@ -982,7 +982,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     accumulatorRef.current = 0;
     requestRef.current = requestAnimationFrame(update);
     
-    if (gameState === GameState.PLAYING && prevGameState.current !== GameState.PLAYING && reviveSignal === 0) {
+    if (gameState === GameState.PLAYING && prevGameState.current !== GameState.PLAYING && prevGameState.current !== GameState.PAUSED && reviveSignal === 0) {
         initGame();
     }
     
