@@ -139,16 +139,13 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     lastTimeRef.current = performance.now();
     accumulatorRef.current = 0;
     
-    // Only re-init background if starting fresh to keep randomness, 
-    // but if coming from menu we might want to keep it? 
-    // Let's re-init to ensure player starts in a clean zone.
     initBackground();
 
     setScore(0);
     setCoinsCollected(0);
     
     // Apply Initial Boosts
-    const active = [];
+    const active: PowerUpType[] = [];
     if (initialBoosts.includes(BoostType.SHIELD_START)) {
         playerRef.current.shieldActive = true;
         active.push(PowerUpType.SHIELD);
@@ -183,20 +180,26 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
   }, [initBackground]);
 
   useEffect(() => {
-    if (reviveSignal > 0 && playerRef.current.dead) {
+    let timer: ReturnType<typeof setTimeout>;
+    if (reviveSignal > 0) {
       playerRef.current.dead = false;
       playerRef.current.shieldActive = true; 
       
       missilesRef.current = [];
       
-      setTimeout(() => {
+      setActivePowerUps(prev => {
+         if (prev.includes(PowerUpType.SHIELD)) return prev;
+         return [...prev, PowerUpType.SHIELD];
+      });
+      
+      timer = setTimeout(() => {
         playerRef.current.shieldActive = false;
         setActivePowerUps(prev => prev.filter(t => t !== PowerUpType.SHIELD));
-      }, 3000);
+      }, 5000);
       
-      setActivePowerUps(prev => [...prev, PowerUpType.SHIELD]);
       prevGameState.current = GameState.PLAYING;
     }
+    return () => clearTimeout(timer);
   }, [reviveSignal, setActivePowerUps]);
 
   useEffect(() => {
