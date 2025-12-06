@@ -1,4 +1,5 @@
-import { Skin, PowerUpType, TrailStyle, DeathEffectStyle, Achievement, BoostItem, BoostType } from './types';
+
+import { PlaneModel, PlaneSkin, PowerUpType, TrailStyle, DeathEffectStyle, Achievement, BoostItem, BoostType } from './types';
 
 export const GAME_CONFIG = {
   PLAYER_SPEED: 5.5,
@@ -22,7 +23,7 @@ export const GAME_CONFIG = {
   DESPAWN_DISTANCE: 2000,
 
   // Cycle
-  CYCLE_DURATION: 3000, 
+  CYCLE_DURATION: 4500, 
 };
 
 export const SKY_COLORS = {
@@ -31,16 +32,62 @@ export const SKY_COLORS = {
   SUNSET_TOP: '#f97316', 
   SUNSET_BOTTOM: '#fecca9',
   NIGHT_TOP: '#0f172a',  
-  NIGHT_BOTTOM: '#1e293b', 
+  NIGHT_BOTTOM: '#1e293b',
+  STORM_TOP: '#1e1b4b',   // Dark indigo/purple
+  STORM_BOTTOM: '#334155', // Slate grey
 };
 
-export const SKINS: Skin[] = [
-  { id: 'default', name: 'Paper White', price: 0, color: '#f8fafc', secondaryColor: '#94a3b8', type: 'basic' },
-  { id: 'neon_cyan', name: 'Cyber Cyan', price: 100, color: '#06b6d4', secondaryColor: '#22d3ee', type: 'fighter' },
-  { id: 'plasma_pink', name: 'Plasma Pink', price: 250, color: '#db2777', secondaryColor: '#f472b6', type: 'basic' },
-  { id: 'golden_glory', name: 'Golden Glory', price: 500, color: '#eab308', secondaryColor: '#facc15', type: 'fighter' },
-  { id: 'stealth_ops', name: 'Ghost Ops', price: 1000, color: '#334155', secondaryColor: '#94a3b8', type: 'stealth' },
-  { id: 'inferno', name: 'Inferno', price: 1500, color: '#ef4444', secondaryColor: '#f87171', type: 'basic' },
+export const PLANE_MODELS: PlaneModel[] = [
+  { 
+    id: 'default', 
+    name: 'Clásico', 
+    price: 0, 
+    path: 'M0 -20 L15 20 L0 15 L-15 20 Z', 
+    stats: { speed: 1.0, turn: 1.0 },
+    description: 'Equilibrado y confiable.'
+  },
+  { 
+    id: 'fighter', 
+    name: 'Caza', 
+    price: 2500, 
+    path: 'M0 -30 L10 20 L0 15 L-10 20 Z', 
+    stats: { speed: 1.2, turn: 0.8 },
+    description: 'Alta velocidad, giro reducido.'
+  },
+  { 
+    id: 'glider', 
+    name: 'Planeador', 
+    price: 3000, 
+    path: 'M0 -15 L25 10 L0 15 L-25 10 Z', 
+    stats: { speed: 0.8, turn: 1.3 },
+    description: 'Lento pero muy ágil.'
+  },
+  { 
+    id: 'stunt', 
+    name: 'Acróbata', 
+    price: 4000, 
+    path: 'M0 -20 L15 10 L0 20 L-15 10 Z', 
+    stats: { speed: 1.05, turn: 1.15 },
+    description: 'Diseño agresivo de ala invertida.'
+  },
+  { 
+    id: 'delta', 
+    name: 'Delta X', 
+    price: 8000, 
+    path: 'M0 -25 L20 20 L0 18 L-20 20 Z', 
+    stats: { speed: 1.15, turn: 1.15 },
+    description: 'Tecnología punta. Rápido y ágil.'
+  }
+];
+
+export const PLANE_SKINS: PlaneSkin[] = [
+  { id: 'default', name: 'Papel Blanco', price: 0, color: '#f8fafc', secondaryColor: '#94a3b8' },
+  { id: 'neon_cyan', name: 'Cyber Cyan', price: 500, color: '#06b6d4', secondaryColor: '#22d3ee' },
+  { id: 'plasma_pink', name: 'Plasma Pink', price: 500, color: '#db2777', secondaryColor: '#f472b6' },
+  { id: 'golden', name: 'Oro Puro', price: 1500, color: '#eab308', secondaryColor: '#facc15' },
+  { id: 'stealth', name: 'Operaciones', price: 1000, color: '#1e293b', secondaryColor: '#475569' },
+  { id: 'inferno', name: 'Inferno', price: 1000, color: '#ef4444', secondaryColor: '#fca5a5' },
+  { id: 'toxic', name: 'Tóxico', price: 800, color: '#84cc16', secondaryColor: '#bef264' },
 ];
 
 export const TRAILS: TrailStyle[] = [

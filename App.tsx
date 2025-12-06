@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { GameCanvas } from './components/GameCanvas';
 import { UIOverlay } from './components/UIOverlay';
@@ -18,6 +19,9 @@ const App: React.FC = () => {
     try { return parseInt(localStorage.getItem('fly_coins') || '0') || 0; } catch { return 0; }
   });
 
+  const [ownedModels, setOwnedModels] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('fly_models') || '["default"]'); } catch { return ['default']; }
+  });
   const [ownedSkins, setOwnedSkins] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('fly_skins') || '["default"]'); } catch { return ['default']; }
   });
@@ -31,11 +35,12 @@ const App: React.FC = () => {
     try { return JSON.parse(localStorage.getItem('fly_boosts') || '{}'); } catch { return {}; }
   });
 
+  const [currentModelId, setCurrentModelId] = useState<string>(() => localStorage.getItem('fly_cur_model') || 'default');
   const [currentSkinId, setCurrentSkinId] = useState<string>(() => localStorage.getItem('fly_cur_skin') || 'default');
   const [currentTrailId, setCurrentTrailId] = useState<string>(() => localStorage.getItem('fly_cur_trail') || 'default');
   const [currentEffectId, setCurrentEffectId] = useState<string>(() => localStorage.getItem('fly_cur_effect') || 'default');
 
-  const [activeBoosts, setActiveBoosts] = useState<BoostType[]>([]); // Boosts selected for next game
+  const [activeBoosts, setActiveBoosts] = useState<BoostType[]>([]); 
 
   const [highScore, setHighScore] = useState<number>(() => {
     try { return parseInt(localStorage.getItem('fly_highscore') || '0') || 0; } catch { return 0; }
@@ -56,10 +61,12 @@ const App: React.FC = () => {
   const [achievements, setAchievements] = useState<Achievement[]>(ACHIEVEMENTS_LIST);
 
   useEffect(() => { localStorage.setItem('fly_coins', totalCoins.toString()); }, [totalCoins]);
+  useEffect(() => { localStorage.setItem('fly_models', JSON.stringify(ownedModels)); }, [ownedModels]);
   useEffect(() => { localStorage.setItem('fly_skins', JSON.stringify(ownedSkins)); }, [ownedSkins]);
   useEffect(() => { localStorage.setItem('fly_trails', JSON.stringify(ownedTrails)); }, [ownedTrails]);
   useEffect(() => { localStorage.setItem('fly_effects', JSON.stringify(ownedEffects)); }, [ownedEffects]);
   useEffect(() => { localStorage.setItem('fly_boosts', JSON.stringify(boostInventory)); }, [boostInventory]);
+  useEffect(() => { localStorage.setItem('fly_cur_model', currentModelId); }, [currentModelId]);
   useEffect(() => { localStorage.setItem('fly_cur_skin', currentSkinId); }, [currentSkinId]);
   useEffect(() => { localStorage.setItem('fly_cur_trail', currentTrailId); }, [currentTrailId]);
   useEffect(() => { localStorage.setItem('fly_cur_effect', currentEffectId); }, [currentEffectId]);
@@ -152,9 +159,10 @@ const App: React.FC = () => {
   }, [gameState]);
 
 
-  const handleBuy = (type: 'skin' | 'trail' | 'effect' | 'boost', id: string, cost: number) => {
+  const handleBuy = (type: 'model' | 'skin' | 'trail' | 'effect' | 'boost', id: string, cost: number) => {
     if (totalCoins < cost) return;
     setTotalCoins(prev => prev - cost);
+    if (type === 'model') setOwnedModels(prev => [...prev, id]);
     if (type === 'skin') setOwnedSkins(prev => [...prev, id]);
     if (type === 'trail') setOwnedTrails(prev => [...prev, id]);
     if (type === 'effect') setOwnedEffects(prev => [...prev, id]);
@@ -166,7 +174,8 @@ const App: React.FC = () => {
     }
   };
 
-  const handleEquip = (type: 'skin' | 'trail' | 'effect', id: string) => {
+  const handleEquip = (type: 'model' | 'skin' | 'trail' | 'effect', id: string) => {
+    if (type === 'model') setCurrentModelId(id);
     if (type === 'skin') setCurrentSkinId(id);
     if (type === 'trail') setCurrentTrailId(id);
     if (type === 'effect') setCurrentEffectId(id);
@@ -182,7 +191,6 @@ const App: React.FC = () => {
 
   const startGame = () => {
       soundManager.resumeContext();
-      // Consume boosts
       const newInventory = { ...boostInventory };
       activeBoosts.forEach(b => {
           if (newInventory[b] > 0) newInventory[b]--;
@@ -203,10 +211,13 @@ const App: React.FC = () => {
   }, []);
 
   const toggleSkyState = () => {
+      soundManager.init();
+      soundManager.resumeContext();
       setSkyState(prev => {
           if (prev === SkyState.DAY) return SkyState.SUNSET;
           if (prev === SkyState.SUNSET) return SkyState.NIGHT;
-          if (prev === SkyState.NIGHT) return SkyState.AUTO;
+          if (prev === SkyState.NIGHT) return SkyState.STORM;
+          if (prev === SkyState.STORM) return SkyState.AUTO;
           return SkyState.DAY;
       });
   };
@@ -237,8 +248,6 @@ const App: React.FC = () => {
               revivePlayer();
           }
       } else {
-          // Strict production mode: Only call Android interface.
-          // No fallback to simulate ad watching.
           if (window.Android && window.Android.showRewardedAd) {
               window.Android.showRewardedAd();
           } else {
@@ -254,6 +263,7 @@ const App: React.FC = () => {
         setGameState={setGameState}
         setScore={setScore}
         setCoinsCollected={setCoinsCollected}
+        currentModelId={currentModelId}
         currentSkinId={currentSkinId}
         currentTrailId={currentTrailId}
         currentDeathEffectId={currentEffectId}
@@ -297,10 +307,12 @@ const App: React.FC = () => {
       {gameState === GameState.SHOP && (
         <Shop 
           coins={totalCoins}
+          ownedModels={ownedModels}
           ownedSkins={ownedSkins}
           ownedTrails={ownedTrails}
           ownedDeathEffects={ownedEffects}
           boostInventory={boostInventory}
+          currentModelId={currentModelId}
           currentSkinId={currentSkinId}
           currentTrailId={currentTrailId}
           currentDeathEffectId={currentEffectId}

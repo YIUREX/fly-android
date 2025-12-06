@@ -1,35 +1,46 @@
+
 import React, { useState } from 'react';
-import { SKINS, TRAILS, DEATH_EFFECTS, BOOSTS } from '../constants';
-import { BoostType } from '../types';
+import { PLANE_MODELS, PLANE_SKINS, TRAILS, DEATH_EFFECTS, BOOSTS } from '../constants';
 
 interface ShopProps {
   coins: number;
+  ownedModels: string[];
   ownedSkins: string[];
   ownedTrails: string[];
   ownedDeathEffects: string[];
   boostInventory: Record<string, number>;
+  currentModelId: string;
   currentSkinId: string;
   currentTrailId: string;
   currentDeathEffectId: string;
-  onBuy: (type: 'skin' | 'trail' | 'effect' | 'boost', id: string, cost: number) => void;
-  onEquip: (type: 'skin' | 'trail' | 'effect', id: string) => void;
+  onBuy: (type: 'model' | 'skin' | 'trail' | 'effect' | 'boost', id: string, cost: number) => void;
+  onEquip: (type: 'model' | 'skin' | 'trail' | 'effect', id: string) => void;
   onBack: () => void;
 }
 
 export const Shop: React.FC<ShopProps> = ({ 
-  coins, ownedSkins, ownedTrails, ownedDeathEffects, boostInventory,
-  currentSkinId, currentTrailId, currentDeathEffectId, 
+  coins, ownedModels, ownedSkins, ownedTrails, ownedDeathEffects, boostInventory,
+  currentModelId, currentSkinId, currentTrailId, currentDeathEffectId, 
   onBuy, onEquip, onBack 
 }) => {
-  const [activeTab, setActiveTab] = useState<'skin' | 'trail' | 'effect' | 'boost'>('skin');
+  const [activeTab, setActiveTab] = useState<'model' | 'skin' | 'trail' | 'effect' | 'boost'>('model');
+
+  // Helper to find current selected skin data for previewing on models
+  const currentSkinData = PLANE_SKINS.find(s => s.id === currentSkinId) || PLANE_SKINS[0];
+  // Helper to find current selected model data for previewing on skins
+  const currentModelData = PLANE_MODELS.find(m => m.id === currentModelId) || PLANE_MODELS[0];
 
   const renderItems = () => {
     let items: any[] = [];
     let ownedList: string[] = [];
     let currentId = '';
 
-    if (activeTab === 'skin') {
-      items = SKINS;
+    if (activeTab === 'model') {
+        items = PLANE_MODELS;
+        ownedList = ownedModels;
+        currentId = currentModelId;
+    } else if (activeTab === 'skin') {
+      items = PLANE_SKINS;
       ownedList = ownedSkins;
       currentId = currentSkinId;
     } else if (activeTab === 'trail') {
@@ -62,10 +73,21 @@ export const Shop: React.FC<ShopProps> = ({
           `}
         >
           {/* Visual Placeholder */}
-          <div className="w-16 h-16 relative flex items-center justify-center bg-black/10 rounded-lg overflow-hidden">
+          <div className="w-20 h-20 relative flex items-center justify-center bg-black/20 rounded-lg overflow-hidden p-2">
+             {activeTab === 'model' && (
+                <svg viewBox="0 0 50 50" className="w-16 h-16 drop-shadow-md">
+                   <g transform="translate(25, 25) rotate(-90)">
+                     {/* Show model shape in default white to emphasize shape */}
+                     <path d={item.path} fill="white" stroke="#94a3b8" strokeWidth="2" />
+                   </g>
+                </svg>
+             )}
              {activeTab === 'skin' && (
-                <svg viewBox="0 0 30 40" className="w-10 h-10 drop-shadow-md">
-                   <path d="M15 0 L30 40 L15 35 L0 40 Z" fill={item.color} stroke={item.secondaryColor} strokeWidth="2" />
+                <svg viewBox="0 0 50 50" className="w-16 h-16 drop-shadow-md">
+                   <g transform="translate(25, 25) rotate(-90)">
+                      {/* Apply skin color to the CURRENTLY EQUIPPED model */}
+                     <path d={currentModelData.path} fill={item.color} stroke={item.secondaryColor} strokeWidth="2" />
+                   </g>
                 </svg>
              )}
              {activeTab === 'trail' && (
@@ -79,9 +101,26 @@ export const Shop: React.FC<ShopProps> = ({
              )}
           </div>
 
-          <div className="text-center">
+          <div className="text-center w-full">
             <h3 className="text-white font-bold text-lg leading-tight drop-shadow-sm">{item.name}</h3>
-            {activeTab === 'skin' && <p className="text-white/60 text-xs mt-1 capitalize">{item.type}</p>}
+            
+            {activeTab === 'model' && (
+                <div className="w-full mt-2 flex flex-col gap-1">
+                    <div className="flex items-center gap-1 text-[10px] text-white/70">
+                        <span>VEL</span>
+                        <div className="flex-1 h-1.5 bg-black/50 rounded-full overflow-hidden">
+                            <div className="h-full bg-cyan-400" style={{width: `${(item.stats.speed/1.5)*100}%`}}></div>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px] text-white/70">
+                        <span>GIRO</span>
+                        <div className="flex-1 h-1.5 bg-black/50 rounded-full overflow-hidden">
+                            <div className="h-full bg-purple-400" style={{width: `${(item.stats.turn/1.5)*100}%`}}></div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
             {isBoost && <p className="text-white/60 text-xs mt-1">{item.description}</p>}
           </div>
 
@@ -147,7 +186,8 @@ export const Shop: React.FC<ShopProps> = ({
 
         {/* TABS */}
         <div className="flex gap-2 mb-6 p-1 bg-black/20 rounded-xl overflow-x-auto touch-action-pan-x">
-            <button onClick={() => setActiveTab('skin')} className={`flex-1 py-2 px-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'skin' ? 'bg-blue-500 text-white shadow-lg' : 'text-white/50 hover:bg-white/5'}`}>AVIONES</button>
+            <button onClick={() => setActiveTab('model')} className={`flex-1 py-2 px-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'model' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/50 hover:bg-white/5'}`}>MODELOS</button>
+            <button onClick={() => setActiveTab('skin')} className={`flex-1 py-2 px-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'skin' ? 'bg-pink-500 text-white shadow-lg' : 'text-white/50 hover:bg-white/5'}`}>PINTURAS</button>
             <button onClick={() => setActiveTab('trail')} className={`flex-1 py-2 px-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'trail' ? 'bg-purple-500 text-white shadow-lg' : 'text-white/50 hover:bg-white/5'}`}>ESTELAS</button>
             <button onClick={() => setActiveTab('effect')} className={`flex-1 py-2 px-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'effect' ? 'bg-red-500 text-white shadow-lg' : 'text-white/50 hover:bg-white/5'}`}>EFECTOS</button>
             <button onClick={() => setActiveTab('boost')} className={`flex-1 py-2 px-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'boost' ? 'bg-yellow-500 text-white shadow-lg' : 'text-white/50 hover:bg-white/5'}`}>MEJORAS</button>

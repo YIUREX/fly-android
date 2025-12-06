@@ -1,13 +1,15 @@
+
 import React, { useEffect, useRef, useCallback } from 'react';
-import { GameState, Player, Missile, Particle, Coin, PowerUp, PowerUpType, Vector, Entity, Cloud, Star, SkyState, Ally, BoostType, TrailStyle } from '../types';
-import { GAME_CONFIG, POWERUP_COLORS, SKINS, TRAILS, DEATH_EFFECTS, SKY_COLORS } from '../constants';
-import { vecAdd, vecSub, vecMult, vecNorm, vecLen, dist, randomRange, lerp, soundManager } from '../utils';
+import { GameState, Player, Missile, Particle, Coin, PowerUp, PowerUpType, Vector, Entity, Cloud, Star, SkyState, Ally, BoostType, TrailStyle, RainDrop } from '../types';
+import { GAME_CONFIG, POWERUP_COLORS, PLANE_MODELS, PLANE_SKINS, TRAILS, DEATH_EFFECTS, SKY_COLORS } from '../constants';
+import { vecAdd, vecSub, vecMult, vecNorm, vecLen, dist, randomRange, lerp, lerpColor, soundManager } from '../utils';
 
 interface GameCanvasProps {
   gameState: GameState;
   setGameState: (state: GameState) => void;
   setScore: (score: number) => void;
   setCoinsCollected: (coins: number) => void;
+  currentModelId: string;
   currentSkinId: string;
   currentTrailId: string;
   currentDeathEffectId: string;
@@ -25,6 +27,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
   setGameState, 
   setScore, 
   setCoinsCollected, 
+  currentModelId,
   currentSkinId,
   currentTrailId,
   currentDeathEffectId,
@@ -54,6 +57,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     shieldActive: false,
     magnetActive: false,
     speedBoostActive: false,
+    modelId: 'default',
     skinId: 'default',
     trailId: 'default',
     deathEffectId: 'default',
@@ -68,7 +72,15 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
   
   const cloudsRef = useRef<Cloud[]>([]);
   const starsRef = useRef<Star[]>([]);
+  const raindropsRef = useRef<RainDrop[]>([]);
+
   const cycleFrameRef = useRef(0);
+  const stormIntensityRef = useRef(0); // 0 to 1
+  const isStormingInAutoRef = useRef(false);
+  const autoStormTimerRef = useRef(0);
+  const lightningTimerRef = useRef(0);
+  const lightningAlphaRef = useRef(0);
+  const isRainPlayingRef = useRef(false);
   
   const frameCountRef = useRef(0);
   const scoreRef = useRef(0);
@@ -99,6 +111,18 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
       });
     }
     starsRef.current = newStars;
+
+    // Initialize Rain
+    const newRain: RainDrop[] = [];
+    for(let i=0; i<150; i++) {
+        newRain.push({
+            x: Math.random() * 2000,
+            y: Math.random() * 2000,
+            length: Math.random() * 20 + 10,
+            speed: Math.random() * 10 + 15
+        });
+    }
+    raindropsRef.current = newRain;
   }, []);
 
   const initGame = useCallback(() => {
@@ -115,6 +139,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
       shieldActive: false,
       magnetActive: false,
       speedBoostActive: false,
+      modelId: currentModelId,
       skinId: currentSkinId,
       trailId: currentTrailId,
       deathEffectId: currentDeathEffectId,
@@ -136,6 +161,10 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     gameTimeRef.current = 0;
     cycleFrameRef.current = 0;
     
+    stormIntensityRef.current = 0;
+    isStormingInAutoRef.current = false;
+    autoStormTimerRef.current = 0;
+
     lastTimeRef.current = performance.now();
     accumulatorRef.current = 0;
     
@@ -172,11 +201,16 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     }
     setActivePowerUps(active);
 
-  }, [currentSkinId, currentTrailId, currentDeathEffectId, setScore, setCoinsCollected, setActivePowerUps, initBackground, initialBoosts]);
+  }, [currentModelId, currentSkinId, currentTrailId, currentDeathEffectId, setScore, setCoinsCollected, setActivePowerUps, initBackground, initialBoosts]);
 
   useEffect(() => {
     // Initial background setup on mount
     initBackground();
+    soundManager.init(); // Initialize sound engine immediately
+    return () => {
+        soundManager.stopRain();
+        isRainPlayingRef.current = false;
+    }
   }, [initBackground]);
 
   useEffect(() => {
@@ -220,19 +254,21 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     };
   };
 
-  const createExplosion = (pos: Vector, color: string, count: number = 15) => {
+  const createExplosion = (pos: Vector, color: string, count: number = 15, isEnemyDeath: boolean = false) => {
     soundManager.playExplosion();
-    const effectStyle = DEATH_EFFECTS.find(e => e.id === playerRef.current.deathEffectId);
     
-    const isPlayerDeath = color === '#f472b6'; 
-    const particleCount = isPlayerDeath && effectStyle ? effectStyle.particleCount : count;
+    // Only apply custom effect if it's an enemy death (as requested)
+    const effectStyle = isEnemyDeath ? DEATH_EFFECTS.find(e => e.id === playerRef.current.deathEffectId) : null;
+    
+    const particleCount = effectStyle ? effectStyle.particleCount : count;
     
     for (let i = 0; i < particleCount; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * 5 + 2;
-      const pColor = (isPlayerDeath && effectStyle && effectStyle.particleColor === 'random') 
+      
+      const pColor = (effectStyle && effectStyle.particleColor === 'random') 
         ? `hsl(${Math.random() * 360}, 100%, 50%)`
-        : (isPlayerDeath && effectStyle?.particleColor ? effectStyle.particleColor : color);
+        : (effectStyle?.particleColor ? effectStyle.particleColor : color);
 
       particlesRef.current.push({
         id: Math.random().toString(),
@@ -263,7 +299,8 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     if (missilesRef.current.length > 0) {
         onMissionUpdate('missiles', missilesRef.current.length);
     }
-    missilesRef.current.forEach(m => createExplosion(m.pos, '#ef4444', 5));
+    // Enemies destroyed by shockwave use custom death effect
+    missilesRef.current.forEach(m => createExplosion(m.pos, '#ef4444', 5, true));
     missilesRef.current = [];
   };
 
@@ -374,8 +411,66 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     frameCountRef.current++;
     gameTimeRef.current += 1/60;
     
+    // Auto Cycle Logic with Probability of Storm
     if (skyState === SkyState.AUTO) {
         cycleFrameRef.current++;
+        
+        // Storm Probability Logic
+        if (!isStormingInAutoRef.current) {
+            // Chance to start storm - REDUCED PROBABILITY
+            if (Math.random() < 0.0001) { // Reduced from 0.0002 to 0.0001
+                isStormingInAutoRef.current = true;
+                autoStormTimerRef.current = 1200; // Duration of storm in frames (approx 20s)
+            }
+        } else {
+            autoStormTimerRef.current--;
+            if (autoStormTimerRef.current <= 0) {
+                isStormingInAutoRef.current = false;
+            }
+        }
+        
+        // Lerp storm intensity
+        if (isStormingInAutoRef.current) {
+            stormIntensityRef.current = lerp(stormIntensityRef.current, 1, 0.01);
+        } else {
+            stormIntensityRef.current = lerp(stormIntensityRef.current, 0, 0.01);
+        }
+    } else if (skyState === SkyState.STORM) {
+        stormIntensityRef.current = 1;
+    } else {
+        stormIntensityRef.current = 0;
+    }
+
+
+    // Lightning Logic
+    if (stormIntensityRef.current > 0.5) {
+        if (lightningTimerRef.current <= 0) {
+            if (Math.random() < 0.01) { // Lightning chance
+                lightningTimerRef.current = 10; // flash duration
+                lightningAlphaRef.current = 0.8;
+                soundManager.playThunder(); // PLAY THUNDER SOUND
+            }
+        } else {
+            lightningTimerRef.current--;
+            lightningAlphaRef.current *= 0.8;
+        }
+    } else {
+        lightningAlphaRef.current = 0;
+    }
+
+    // Rain Update
+    if (stormIntensityRef.current > 0) {
+        raindropsRef.current.forEach(d => {
+            d.y += d.speed;
+            d.x -= d.speed * 0.2; // wind
+            
+            // Check world bounds relative to camera to loop rain
+            const screenY = d.y - cameraRef.current.y;
+            if (screenY > height/2 + 1000) {
+                d.y -= 2000;
+                d.x = cameraRef.current.x + Math.random() * 2000 - 1000;
+            }
+        });
     }
 
     const difficultyMultiplier = 1 + Math.min(scoreRef.current / 3000, 1.2);
@@ -391,6 +486,8 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     }
 
     const p = playerRef.current;
+    // Get Stats from Model
+    const model = PLANE_MODELS.find(m => m.id === p.modelId) || PLANE_MODELS[0];
     
     if (joystickRef.current && joystickRef.current.active) {
       const { origin, current } = joystickRef.current;
@@ -402,11 +499,15 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         let angleDiff = targetAngle - p.angle;
         while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
         while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-        p.angle += Math.max(-GAME_CONFIG.PLAYER_TURN_SPEED, Math.min(GAME_CONFIG.PLAYER_TURN_SPEED, angleDiff));
+        
+        const turnSpeed = GAME_CONFIG.PLAYER_TURN_SPEED * model.stats.turn;
+        p.angle += Math.max(-turnSpeed, Math.min(turnSpeed, angleDiff));
       }
     }
 
-    const currentSpeed = p.speedBoostActive ? GAME_CONFIG.PLAYER_BOOST_SPEED : GAME_CONFIG.PLAYER_SPEED;
+    const baseSpeed = p.speedBoostActive ? GAME_CONFIG.PLAYER_BOOST_SPEED : GAME_CONFIG.PLAYER_SPEED;
+    const currentSpeed = baseSpeed * model.stats.speed;
+    
     const moveVel = { x: Math.cos(p.angle) * currentSpeed, y: Math.sin(p.angle) * currentSpeed };
     p.pos = vecAdd(p.pos, moveVel);
 
@@ -442,7 +543,8 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
             if (nearestDist < 20) {
                 target.dead = true;
                 ally.dead = true; 
-                createExplosion(target.pos, '#22d3ee', 10);
+                // Ally kill uses custom death effect
+                createExplosion(target.pos, '#22d3ee', 10, true);
                 onMissionUpdate('missiles', 1);
             }
         } else {
@@ -471,6 +573,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     });
     alliesRef.current = alliesRef.current.filter(a => !a.dead);
 
+    // MISSILE UPDATE
     missilesRef.current.forEach(m => {
       const toPlayer = vecSub(p.pos, m.pos);
       const angleToPlayer = Math.atan2(toPlayer.y, toPlayer.x);
@@ -479,9 +582,24 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
+      // 1. Steering
       m.angle += Math.max(-m.turnRate, Math.min(m.turnRate, angleDiff));
-      const velocity = { x: Math.cos(m.angle) * m.speed, y: Math.sin(m.angle) * m.speed };
-      m.pos = vecAdd(m.pos, velocity);
+
+      // 2. Drifting
+      const desiredVelocity = { 
+          x: Math.cos(m.angle) * m.speed, 
+          y: Math.sin(m.angle) * m.speed 
+      };
+
+      if (m.vel.x === 0 && m.vel.y === 0) {
+          m.vel = desiredVelocity;
+      } else {
+          const driftFactor = 0.05; 
+          m.vel.x += (desiredVelocity.x - m.vel.x) * driftFactor;
+          m.vel.y += (desiredVelocity.y - m.vel.y) * driftFactor;
+      }
+
+      m.pos = vecAdd(m.pos, m.vel);
 
       const missileTailOffset = 10; 
       const missileTailPos = {
@@ -493,11 +611,13 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
       if (dist(m.pos, p.pos) < m.radius + p.radius - 5 && !p.dead) {
         if (p.shieldActive) {
           m.dead = true;
-          createExplosion(m.pos, '#60a5fa', 10);
+          // Missile hits shield - Custom effect
+          createExplosion(m.pos, '#60a5fa', 10, true);
           scoreRef.current += 50;
         } else {
           p.dead = true;
-          createExplosion(p.pos, '#f472b6', 40);
+          // Player death - Standard effect (false)
+          createExplosion(p.pos, '#f472b6', 40, false);
           soundManager.playGameOver();
           setGameState(GameState.GAMEOVER);
         }
@@ -508,7 +628,8 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         if (dist(m.pos, otherM.pos) < m.radius + otherM.radius) {
           m.dead = true;
           otherM.dead = true;
-          createExplosion(m.pos, '#facc15', 20);
+          // Missile collision - Custom effect
+          createExplosion(m.pos, '#facc15', 20, true);
           scoreRef.current += 100;
           setScore(Math.floor(scoreRef.current));
           onMissionUpdate('missiles', 2);
@@ -530,7 +651,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         coinsCollectedRef.current += c.value;
         setCoinsCollected(coinsCollectedRef.current);
         scoreRef.current += 10;
-        createExplosion(c.pos, '#facc15', 5);
+        createExplosion(c.pos, '#facc15', 5, false);
         soundManager.playCoin();
         setScore(Math.floor(scoreRef.current));
         addCoins(c.value);
@@ -544,7 +665,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
       if (dist(pu.pos, p.pos) < pu.radius + p.radius) {
         pu.dead = true;
         activatePowerUp(pu.type);
-        createExplosion(pu.pos, POWERUP_COLORS[pu.type], 15);
+        createExplosion(pu.pos, POWERUP_COLORS[pu.type], 15, false);
         soundManager.playPowerUp();
       }
       if (dist(pu.pos, p.pos) > GAME_CONFIG.DESPAWN_DISTANCE) pu.dead = true;
@@ -574,28 +695,52 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Delta Time Logic for 60FPS lock
+    // Delta Time Logic
     const frameDuration = 1000 / 60; 
     let dt = time - lastTimeRef.current;
-    if (dt > 100) dt = 100; // Cap dt to prevent spiral of death if tab was inactive
+    if (dt > 100) dt = 100;
     lastTimeRef.current = time;
     accumulatorRef.current += dt;
 
-    // Fixed Update Loop (Logic)
+    // --- RAIN SOUND CHECK (Runs every frame) ---
+    // Should rain if: (Sky is STORM) OR (Sky is AUTO AND Intensity > 0.1)
+    // AND NOT in Shop/Missions (to be clean)
+    const isInGameOrMenu = gameState === GameState.PLAYING || gameState === GameState.MENU || gameState === GameState.PAUSED;
+    const shouldRain = isInGameOrMenu && (skyState === SkyState.STORM || (skyState === SkyState.AUTO && stormIntensityRef.current > 0.1));
+    
+    if (shouldRain && !isRainPlayingRef.current) {
+        soundManager.startRain();
+        isRainPlayingRef.current = true;
+    } else if (!shouldRain && isRainPlayingRef.current) {
+        soundManager.stopRain();
+        isRainPlayingRef.current = false;
+    }
+    // ------------------------------------------
+
     while (accumulatorRef.current >= frameDuration) {
         if (gameState === GameState.PLAYING) {
             fixedUpdate(width, height);
         } else {
-            // Animate background elements in Menu/Pause
             gameTimeRef.current += 1/60;
             cloudsRef.current.forEach(c => {
-                 c.x -= c.speed * 0.5; // Simulate gentle wind
+                 c.x -= c.speed * 0.5; 
             });
+            // Update rain in menu too
+            if (skyState === SkyState.STORM || (skyState === SkyState.AUTO && stormIntensityRef.current > 0)) {
+                raindropsRef.current.forEach(d => {
+                    d.y += d.speed;
+                    d.x -= d.speed * 0.2;
+                    const screenY = d.y - cameraRef.current.y;
+                    if (screenY > height/2 + 1000) {
+                        d.y -= 2000;
+                        d.x = cameraRef.current.x + Math.random() * 2000 - 1000;
+                    }
+                });
+            }
         }
         accumulatorRef.current -= frameDuration;
     }
 
-    // Drawing Loop
     ctx.clearRect(0, 0, width, height);
     drawBackground(ctx, width, height);
 
@@ -702,29 +847,19 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         ctx.translate(screenPos.x, screenPos.y);
         ctx.rotate(p.angle + Math.PI / 2);
 
-        const skin = SKINS.find(s => s.id === p.skinId) || SKINS[0];
+        // --- RENDER PLAYER MODEL WITH SKIN ---
+        const model = PLANE_MODELS.find(m => m.id === p.modelId) || PLANE_MODELS[0];
+        const skin = PLANE_SKINS.find(s => s.id === p.skinId) || PLANE_SKINS[0];
         
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        ctx.beginPath();
-        ctx.moveTo(0, -20);
-        ctx.lineTo(15, 20);
-        ctx.lineTo(0, 15);
-        ctx.lineTo(-15, 20);
-        ctx.closePath();
-        ctx.fill();
-
+        // Body
         ctx.fillStyle = skin.color;
         ctx.strokeStyle = skin.secondaryColor;
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, -20);
-        ctx.lineTo(15, 20);
-        ctx.lineTo(0, 15);
-        ctx.lineTo(-15, 20);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+        const path = new Path2D(model.path);
+        ctx.fill(path);
+        ctx.stroke(path);
 
+        // Center fold detail (approximate for all models)
         ctx.fillStyle = 'rgba(0,0,0,0.1)';
         ctx.beginPath();
         ctx.moveTo(0, -20);
@@ -817,7 +952,6 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         ctx.restore();
         });
 
-        // Vector PowerUps
         powerUpsRef.current.forEach(pu => {
         const screenPos = worldToScreen(pu.pos, width, height);
         ctx.save();
@@ -912,29 +1046,63 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     }
 
     requestRef.current = requestAnimationFrame(update);
-  }, [gameState, fixedUpdate]);
+  }, [gameState, fixedUpdate, skyState]);
 
   const drawBackground = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     let topColor = SKY_COLORS.DAY_TOP;
     let bottomColor = SKY_COLORS.DAY_BOTTOM;
-    let isNight = false;
-
-    let currentPhase = skyState;
+    let starOpacity = 0;
+    
+    // Calculate Base Cycle Colors
     if (skyState === SkyState.AUTO) {
-        const cycle = cycleFrameRef.current % GAME_CONFIG.CYCLE_DURATION;
-        const third = GAME_CONFIG.CYCLE_DURATION / 3;
-        if (cycle < third) currentPhase = SkyState.DAY;
-        else if (cycle < third * 2) currentPhase = SkyState.SUNSET;
-        else currentPhase = SkyState.NIGHT;
-    }
+        const totalDuration = GAME_CONFIG.CYCLE_DURATION;
+        const time = cycleFrameRef.current % totalDuration;
+        const segmentDuration = totalDuration / 3;
 
-    if (currentPhase === SkyState.SUNSET) {
+        const getT = (pct: number) => {
+            const hold = 0.7; // Hold color for 70% of the phase
+            if (pct < hold) return 0;
+            return (pct - hold) / (1 - hold);
+        };
+
+        if (time < segmentDuration) {
+            // Day to Sunset
+            const rawT = time / segmentDuration;
+            const t = getT(rawT);
+            topColor = lerpColor(SKY_COLORS.DAY_TOP, SKY_COLORS.SUNSET_TOP, t);
+            bottomColor = lerpColor(SKY_COLORS.DAY_BOTTOM, SKY_COLORS.SUNSET_BOTTOM, t);
+            starOpacity = 0;
+        } else if (time < segmentDuration * 2) {
+            // Sunset to Night
+            const rawT = (time - segmentDuration) / segmentDuration;
+            const t = getT(rawT);
+            topColor = lerpColor(SKY_COLORS.SUNSET_TOP, SKY_COLORS.NIGHT_TOP, t);
+            bottomColor = lerpColor(SKY_COLORS.SUNSET_BOTTOM, SKY_COLORS.NIGHT_BOTTOM, t);
+            starOpacity = t; 
+        } else {
+            // Night to Day
+            const rawT = (time - segmentDuration * 2) / segmentDuration;
+            const t = getT(rawT);
+            topColor = lerpColor(SKY_COLORS.NIGHT_TOP, SKY_COLORS.DAY_TOP, t);
+            bottomColor = lerpColor(SKY_COLORS.NIGHT_BOTTOM, SKY_COLORS.DAY_BOTTOM, t);
+            starOpacity = 1 - t;
+        }
+    } else if (skyState === SkyState.SUNSET) {
         topColor = SKY_COLORS.SUNSET_TOP;
         bottomColor = SKY_COLORS.SUNSET_BOTTOM;
-    } else if (currentPhase === SkyState.NIGHT) {
+    } else if (skyState === SkyState.NIGHT) {
         topColor = SKY_COLORS.NIGHT_TOP;
         bottomColor = SKY_COLORS.NIGHT_BOTTOM;
-        isNight = true;
+        starOpacity = 1;
+    } else if (skyState === SkyState.STORM) {
+        topColor = SKY_COLORS.STORM_TOP;
+        bottomColor = SKY_COLORS.STORM_BOTTOM;
+    }
+
+    // Blend in Storm if active in Auto Mode
+    if (skyState === SkyState.AUTO && stormIntensityRef.current > 0) {
+        topColor = lerpColor(topColor, SKY_COLORS.STORM_TOP, stormIntensityRef.current);
+        bottomColor = lerpColor(bottomColor, SKY_COLORS.STORM_BOTTOM, stormIntensityRef.current);
     }
 
     const grad = ctx.createLinearGradient(0, 0, 0, height);
@@ -943,25 +1111,36 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
 
-    if (isNight) {
-      ctx.fillStyle = 'white';
-      starsRef.current.forEach(star => {
-        const offsetX = (star.x - cameraRef.current.x * star.speed) % 2000;
-        const offsetY = (star.y - cameraRef.current.y * star.speed) % 2000;
-        let screenX = offsetX < 0 ? offsetX + 2000 : offsetX;
-        let screenY = offsetY < 0 ? offsetY + 2000 : offsetY;
-
-        if (screenX > -50 && screenX < width + 50 && screenY > -50 && screenY < height + 50) {
-            const opacity = 0.5 + Math.sin(gameTimeRef.current * 5 + star.blinkOffset) * 0.5;
-            ctx.globalAlpha = opacity;
-            ctx.beginPath();
-            ctx.arc(screenX, screenY, star.size, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.globalAlpha = 1.0;
-        }
-      });
+    // Lightning Flash
+    if (lightningAlphaRef.current > 0) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${lightningAlphaRef.current})`;
+        ctx.fillRect(0, 0, width, height);
     }
 
+    // Stars
+    if (starOpacity > 0 || (skyState === SkyState.AUTO && stormIntensityRef.current < 1)) {
+      const displayOpacity = Math.max(0, starOpacity - stormIntensityRef.current); // Stars fade in storm
+      if (displayOpacity > 0) {
+          ctx.fillStyle = 'white';
+          starsRef.current.forEach(star => {
+            const offsetX = (star.x - cameraRef.current.x * star.speed) % 2000;
+            const offsetY = (star.y - cameraRef.current.y * star.speed) % 2000;
+            let screenX = offsetX < 0 ? offsetX + 2000 : offsetX;
+            let screenY = offsetY < 0 ? offsetY + 2000 : offsetY;
+
+            if (screenX > -50 && screenX < width + 50 && screenY > -50 && screenY < height + 50) {
+                const blink = 0.5 + Math.sin(gameTimeRef.current * 5 + star.blinkOffset) * 0.5;
+                ctx.globalAlpha = displayOpacity * blink;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, star.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+          });
+      }
+    }
+
+    // Clouds
     cloudsRef.current.forEach(cloud => {
         const offsetX = (cloud.x - cameraRef.current.x * cloud.speed) % 2000;
         const offsetY = (cloud.y - cameraRef.current.y * cloud.speed) % 2000;
@@ -969,7 +1148,20 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         let screenY = offsetY < -200 ? offsetY + 2000 : offsetY;
 
         if (screenX > -200 && screenX < width + 200 && screenY > -200 && screenY < height + 200) {
-            ctx.fillStyle = isNight ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)';
+            // Clouds get darker in storm
+            let cloudAlpha = cloud.opacity;
+            let cloudColor = '255,255,255';
+            
+            if (skyState === SkyState.STORM || (skyState === SkyState.AUTO && stormIntensityRef.current > 0)) {
+                const intensity = (skyState === SkyState.STORM) ? 1 : stormIntensityRef.current;
+                cloudColor = lerpColor('#ffffff', '#334155', intensity).match(/\d+, \d+, \d+/)?.[0] || '100, 116, 139';
+                if (intensity > 0.5) cloudColor = '51, 65, 85'; // Slate-700
+                cloudAlpha = cloud.opacity + (intensity * 0.4); // Darker and more opaque
+            }
+
+            // Simple cloud drawing
+            ctx.fillStyle = `rgba(${cloudColor}, ${cloudAlpha})`;
+            
             ctx.beginPath();
             ctx.arc(screenX, screenY, 60 * cloud.scale, 0, Math.PI * 2);
             ctx.arc(screenX + 40 * cloud.scale, screenY - 20 * cloud.scale, 70 * cloud.scale, 0, Math.PI * 2);
@@ -977,6 +1169,27 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
             ctx.fill();
         }
     });
+
+    // Rain
+    if (skyState === SkyState.STORM || (skyState === SkyState.AUTO && stormIntensityRef.current > 0)) {
+        const intensity = (skyState === SkyState.STORM) ? 1 : stormIntensityRef.current;
+        ctx.strokeStyle = `rgba(148, 163, 184, ${0.6 * intensity})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        raindropsRef.current.forEach(d => {
+            const offsetX = (d.x - cameraRef.current.x) % 2000;
+            const offsetY = (d.y - cameraRef.current.y) % 2000;
+            let screenX = offsetX < 0 ? offsetX + 2000 : offsetX;
+            let screenY = offsetY < 0 ? offsetY + 2000 : offsetY;
+            
+            // Optimization: only draw if on screen
+            if (screenX > -50 && screenX < width + 50 && screenY > -50 && screenY < height + 50) {
+                ctx.moveTo(screenX, screenY);
+                ctx.lineTo(screenX - 5, screenY + d.length);
+            }
+        });
+        ctx.stroke();
+    }
   };
 
   useEffect(() => {

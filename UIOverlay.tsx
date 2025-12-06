@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { GameState, PowerUpType, SkyState, Mission, Achievement, BoostType } from '../types';
 import { POWERUP_LABELS, POWERUP_COLORS, BOOSTS } from '../constants';
@@ -58,6 +59,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           case SkyState.DAY: return '☀️';
           case SkyState.SUNSET: return '🌅';
           case SkyState.NIGHT: return '🌙';
+          case SkyState.STORM: return '⛈️';
           case SkyState.AUTO: return '🔄';
       }
   };

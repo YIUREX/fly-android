@@ -1,3 +1,4 @@
+
 export type Vector = { x: number; y: number };
 
 export enum GameState {
@@ -27,16 +28,28 @@ export enum SkyState {
   DAY = 'DAY',
   SUNSET = 'SUNSET',
   NIGHT = 'NIGHT',
+  STORM = 'STORM',
   AUTO = 'AUTO'
 }
 
-export interface Skin {
+export interface PlaneModel {
+  id: string;
+  name: string;
+  price: number;
+  path: string; // SVG Path string
+  stats: {
+      speed: number; // Multiplier (e.g. 1.0, 1.2)
+      turn: number;  // Multiplier
+  };
+  description: string;
+}
+
+export interface PlaneSkin {
   id: string;
   name: string;
   price: number;
   color: string;
   secondaryColor: string;
-  type: 'basic' | 'fighter' | 'stealth';
 }
 
 export interface TrailStyle {
@@ -86,6 +99,7 @@ export interface Player extends Entity {
   shieldActive: boolean;
   magnetActive: boolean;
   speedBoostActive: boolean;
+  modelId: string;
   skinId: string;
   trailId: string;
   deathEffectId: string;
@@ -130,6 +144,13 @@ export interface Star {
   size: number;
   speed: number;
   blinkOffset: number;
+}
+
+export interface RainDrop {
+  x: number;
+  y: number;
+  length: number;
+  speed: number;
 }
 
 export interface Mission {
