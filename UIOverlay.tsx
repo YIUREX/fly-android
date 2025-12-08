@@ -1,7 +1,7 @@
 
-import React from 'react';
-import { GameState, PowerUpType, SkyState, Mission, Achievement, BoostType } from '../types';
-import { POWERUP_LABELS, POWERUP_COLORS, BOOSTS } from '../constants';
+import React, { useState } from 'react';
+import { GameState, PowerUpType, SkyState, Mission, Achievement, BoostType, MusicTrack } from '../types';
+import { POWERUP_LABELS, POWERUP_COLORS, BOOSTS, MUSIC_PLAYLIST } from '../constants';
 
 interface UIOverlayProps {
   gameState: GameState;
@@ -26,6 +26,18 @@ interface UIOverlayProps {
   boostInventory: Record<string, number>;
   activeBoosts: BoostType[];
   onToggleBoost: (boostId: BoostType) => void;
+  
+  // Music Props
+  musicCurrentTrackIndex: number;
+  musicIsPlaying: boolean;
+  musicIsShuffle: boolean;
+  musicIsLoop: boolean;
+  onMusicPlayPause: () => void;
+  onMusicNext: () => void;
+  onMusicPrev: () => void;
+  onMusicSelect: (index: number) => void;
+  onMusicToggleShuffle: () => void;
+  onMusicToggleLoop: () => void;
 }
 
 export const UIOverlay: React.FC<UIOverlayProps> = ({
@@ -50,8 +62,19 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   streak,
   boostInventory,
   activeBoosts,
-  onToggleBoost
+  onToggleBoost,
+  musicCurrentTrackIndex,
+  musicIsPlaying,
+  musicIsShuffle,
+  musicIsLoop,
+  onMusicPlayPause,
+  onMusicNext,
+  onMusicPrev,
+  onMusicSelect,
+  onMusicToggleShuffle,
+  onMusicToggleLoop
 }) => {
+  const [showSettings, setShowSettings] = useState(false);
   const isNewRecord = score > highScore && highScore > 0;
 
   const renderSkyIcon = () => {
@@ -60,16 +83,29 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           case SkyState.SUNSET: return '🌅';
           case SkyState.NIGHT: return '🌙';
           case SkyState.STORM: return '⛈️';
+          case SkyState.SNOW: return '❄️';
           case SkyState.AUTO: return '🔄';
       }
   };
 
+  const currentTrack = MUSIC_PLAYLIST[musicCurrentTrackIndex];
+
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-6 z-10 font-fredoka select-none overflow-hidden">
       
-      {/* Top Bar Controls - Increased z-index to 60 to sit above Menu layer */}
+      {/* Top Bar Controls */}
       <div className="absolute top-0 left-0 w-full p-6 flex justify-between pointer-events-none z-[60]">
         <div className="pointer-events-auto flex gap-2">
+          {/* Settings Button - Only visible in Menu or Pause */}
+          {(gameState === GameState.MENU || gameState === GameState.PAUSED) && (
+            <button 
+                onClick={() => setShowSettings(true)}
+                className="p-3 rounded-full shadow-lg border-2 flex items-center justify-center w-12 h-12 bg-white/20 border-white/50 text-white backdrop-blur-md hover:bg-white/30 transition-colors"
+            >
+                ⚙️
+            </button>
+          )}
+
           {gameState === GameState.PLAYING && (
             <button 
               onClick={onPause}
@@ -339,6 +375,78 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                   >
                     VOLVER AL MENÚ
                   </button>
+              </div>
+          </div>
+      )}
+
+      {/* SETTINGS MODAL (Music) */}
+      {showSettings && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-auto z-[70] bg-black/80 backdrop-blur-xl p-4">
+              <div className="w-full max-w-md bg-slate-800 rounded-3xl border border-white/10 p-6 shadow-2xl">
+                  <div className="flex justify-between items-center mb-6">
+                      <h2 className="text-2xl font-bold text-white flex items-center gap-2">⚙️ Ajustes</h2>
+                      <button 
+                        onClick={() => setShowSettings(false)}
+                        className="bg-white/10 w-10 h-10 rounded-full flex items-center justify-center text-white hover:bg-white/20 font-bold"
+                      >
+                        ✕
+                      </button>
+                  </div>
+
+                  {/* Music Player */}
+                  <div className="bg-black/40 rounded-2xl p-4 border border-white/5">
+                      <div className="flex items-center gap-2 mb-4">
+                          <span className="text-2xl">🎵</span>
+                          <h3 className="text-lg font-bold text-white">Música</h3>
+                      </div>
+
+                      <div className="bg-white/5 rounded-xl p-3 mb-4 flex flex-col items-center">
+                          <p className="text-xs text-white/50 mb-1 tracking-widest uppercase">REPRODUCIENDO</p>
+                          <p className="text-cyan-300 font-bold text-center truncate w-full">{currentTrack?.title || 'Selecciona una canción'}</p>
+                      </div>
+
+                      {/* Controls */}
+                      <div className="flex justify-center items-center gap-4 mb-6">
+                          <button onClick={onMusicPrev} className="text-2xl text-white/70 hover:text-white">⏮️</button>
+                          <button 
+                            onClick={onMusicPlayPause}
+                            className="w-14 h-14 bg-cyan-500 hover:bg-cyan-400 rounded-full flex items-center justify-center text-white shadow-lg text-2xl"
+                          >
+                            {musicIsPlaying ? '⏸️' : '▶️'}
+                          </button>
+                          <button onClick={onMusicNext} className="text-2xl text-white/70 hover:text-white">⏭️</button>
+                      </div>
+
+                      {/* Toggles */}
+                      <div className="flex justify-between gap-2 mb-4">
+                          <button 
+                            onClick={onMusicToggleLoop}
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold border ${musicIsLoop ? 'bg-green-500/20 border-green-500 text-green-300' : 'bg-white/5 border-white/10 text-white/50'}`}
+                          >
+                            🔁 BUCLE: {musicIsLoop ? 'ON' : 'OFF'}
+                          </button>
+                          <button 
+                            onClick={onMusicToggleShuffle}
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold border ${musicIsShuffle ? 'bg-purple-500/20 border-purple-500 text-purple-300' : 'bg-white/5 border-white/10 text-white/50'}`}
+                          >
+                            🔀 ALEATORIO: {musicIsShuffle ? 'ON' : 'OFF'}
+                          </button>
+                      </div>
+
+                      {/* Song List */}
+                      <div className="max-h-40 overflow-y-auto pr-1 space-y-1 custom-scrollbar">
+                          {MUSIC_PLAYLIST.map((track, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => onMusicSelect(idx)}
+                                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex justify-between items-center ${musicCurrentTrackIndex === idx ? 'bg-white/20 text-white font-bold' : 'text-white/60 hover:bg-white/10'}`}
+                              >
+                                  <span className="truncate">{track.title}</span>
+                                  {musicCurrentTrackIndex === idx && musicIsPlaying && <span className="text-[10px] animate-pulse">▶</span>}
+                              </button>
+                          ))}
+                      </div>
+                  </div>
               </div>
           </div>
       )}

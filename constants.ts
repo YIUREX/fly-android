@@ -1,5 +1,5 @@
 
-import { PlaneModel, PlaneSkin, PowerUpType, TrailStyle, DeathEffectStyle, Achievement, BoostItem, BoostType } from './types';
+import { PlaneModel, PlaneSkin, PowerUpType, TrailStyle, DeathEffectStyle, Achievement, BoostItem, BoostType, MusicTrack } from './types';
 
 export const GAME_CONFIG = {
   PLAYER_SPEED: 5.5,
@@ -35,6 +35,8 @@ export const SKY_COLORS = {
   NIGHT_BOTTOM: '#1e293b',
   STORM_TOP: '#1e1b4b',   // Dark indigo/purple
   STORM_BOTTOM: '#334155', // Slate grey
+  SNOW_TOP: '#cbd5e1', // Slate 300 - Light Grey/Blueish
+  SNOW_BOTTOM: '#f8fafc', // Slate 50 - Almost White
 };
 
 export const PLANE_MODELS: PlaneModel[] = [
@@ -154,4 +156,14 @@ export const ACHIEVEMENTS_LIST: Achievement[] = [
     reward: 300, 
     unlocked: false 
   },
+];
+
+export const MUSIC_PLAYLIST: MusicTrack[] = [
+  { title: "Interstellar", src: "https://raw.githubusercontent.com/YIUREX/fly-audio/main/Interstellar.mp3" },
+  { title: "Sweetly", src: "https://raw.githubusercontent.com/YIUREX/fly-audio/main/Sweetly.mp3" },
+  { title: "Gods Creation", src: "https://raw.githubusercontent.com/YIUREX/fly-audio/main/GodsCreation.mp3" },
+  { title: "Ylang Ylang", src: "https://raw.githubusercontent.com/YIUREX/fly-audio/main/YlangYlang.mp3" },
+  { title: "Hopeless Romantic", src: "https://raw.githubusercontent.com/YIUREX/fly-audio/main/HopelessRomantic.mp3" },
+  { title: "Better Days", src: "https://raw.githubusercontent.com/YIUREX/fly-audio/main/BetterDays.mp3" },
+  { title: "Comfort Chain", src: "https://raw.githubusercontent.com/YIUREX/fly-audio/main/ComfortChain.mp3" }
 ];

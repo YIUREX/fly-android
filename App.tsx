@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GameCanvas } from './components/GameCanvas';
 import { UIOverlay } from './components/UIOverlay';
 import { Shop } from './components/Shop';
 import { GameState, PowerUpType, SkyState, Mission, Achievement, GameStats, BoostType } from './types';
-import { ACHIEVEMENTS_LIST } from './constants';
+import { ACHIEVEMENTS_LIST, MUSIC_PLAYLIST } from './constants';
 import { generateDailyMissions, soundManager } from './utils';
 
 const App: React.FC = () => {
@@ -13,6 +13,110 @@ const App: React.FC = () => {
   const [coinsCollected, setCoinsCollected] = useState(0);
   const [activePowerUps, setActivePowerUps] = useState<PowerUpType[]>([]);
   const [reviveSignal, setReviveSignal] = useState(0);
+
+  // --- MUSIC ENGINE ---
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [musicCurrentTrackIndex, setMusicCurrentTrackIndex] = useState(0);
+  const [musicIsPlaying, setMusicIsPlaying] = useState(false);
+  const [musicIsShuffle, setMusicIsShuffle] = useState(false);
+  const [musicIsLoop, setMusicIsLoop] = useState(false);
+
+  // Initialize Audio Element once
+  useEffect(() => {
+      audioRef.current = new Audio();
+      audioRef.current.volume = 0.5; // Music volume
+      
+      // Load initial track
+      if (MUSIC_PLAYLIST.length > 0) {
+          audioRef.current.src = MUSIC_PLAYLIST[0].src;
+      }
+
+      return () => {
+          if (audioRef.current) {
+              audioRef.current.pause();
+              audioRef.current = null;
+          }
+      };
+  }, []);
+
+  // Handle Track Source Change
+  useEffect(() => {
+      if (audioRef.current && MUSIC_PLAYLIST[musicCurrentTrackIndex]) {
+          // If the src is different, update it
+          if (audioRef.current.src !== MUSIC_PLAYLIST[musicCurrentTrackIndex].src) {
+              audioRef.current.src = MUSIC_PLAYLIST[musicCurrentTrackIndex].src;
+              if (musicIsPlaying) {
+                  audioRef.current.play().catch(e => console.warn("Audio play interrupted:", e));
+              }
+          }
+      }
+  }, [musicCurrentTrackIndex]);
+
+  // Handle Play/Pause Toggle
+  useEffect(() => {
+      if (audioRef.current) {
+          if (musicIsPlaying) {
+              audioRef.current.play().catch(e => console.warn("Audio play failed (interaction needed):", e));
+          } else {
+              audioRef.current.pause();
+          }
+      }
+  }, [musicIsPlaying]);
+
+  // Handle 'Ended' Event Logic (Next Song / Loop / Shuffle)
+  // Re-bind listener when dependencies change to avoid stale state
+  useEffect(() => {
+      const audio = audioRef.current;
+      if (!audio) return;
+
+      const handleEnded = () => {
+          if (musicIsLoop) {
+              audio.currentTime = 0;
+              audio.play().catch(e => console.error(e));
+          } else if (musicIsShuffle) {
+              let nextIndex;
+              do {
+                  nextIndex = Math.floor(Math.random() * MUSIC_PLAYLIST.length);
+              } while (nextIndex === musicCurrentTrackIndex && MUSIC_PLAYLIST.length > 1);
+              setMusicCurrentTrackIndex(nextIndex);
+          } else {
+              // Play next sequential
+              setMusicCurrentTrackIndex(prev => (prev + 1) % MUSIC_PLAYLIST.length);
+          }
+      };
+
+      audio.addEventListener('ended', handleEnded);
+      return () => audio.removeEventListener('ended', handleEnded);
+  }, [musicIsLoop, musicIsShuffle, musicCurrentTrackIndex]); // Re-bind when modes change
+
+  const handleMusicPlayPause = () => setMusicIsPlaying(prev => !prev);
+  
+  const handleMusicNext = () => {
+      if (musicIsShuffle) {
+          let nextIndex;
+          do {
+              nextIndex = Math.floor(Math.random() * MUSIC_PLAYLIST.length);
+          } while (nextIndex === musicCurrentTrackIndex && MUSIC_PLAYLIST.length > 1);
+          setMusicCurrentTrackIndex(nextIndex);
+      } else {
+          setMusicCurrentTrackIndex(prev => (prev + 1) % MUSIC_PLAYLIST.length);
+      }
+      setMusicIsPlaying(true);
+  };
+
+  const handleMusicPrev = () => {
+      setMusicCurrentTrackIndex(prev => (prev - 1 + MUSIC_PLAYLIST.length) % MUSIC_PLAYLIST.length);
+      setMusicIsPlaying(true);
+  };
+
+  const handleMusicSelect = (index: number) => {
+      setMusicCurrentTrackIndex(index);
+      setMusicIsPlaying(true);
+  };
+
+  const handleMusicToggleShuffle = () => setMusicIsShuffle(prev => !prev);
+  const handleMusicToggleLoop = () => setMusicIsLoop(prev => !prev);
+
 
   // --- PERSISTENCE ---
   const [totalCoins, setTotalCoins] = useState<number>(() => {
@@ -108,17 +212,23 @@ const App: React.FC = () => {
 
   const handleMissionUpdate = useCallback((type: string, amount: number) => {
       setMissions(prev => {
+          let rewardToAdd = 0;
           const updated = prev.map(m => {
               if (!m.completed && m.type === type) {
                   const newCurrent = m.current + amount;
                   if (newCurrent >= m.target) {
-                      setTotalCoins(c => c + m.reward);
+                      rewardToAdd += m.reward;
                       return { ...m, current: newCurrent, completed: true };
                   }
                   return { ...m, current: newCurrent };
               }
               return m;
           });
+          
+          if (rewardToAdd > 0) {
+              setTotalCoins(c => c + rewardToAdd);
+          }
+
           localStorage.setItem('fly_missions', JSON.stringify(updated));
           return updated;
       });
@@ -217,7 +327,8 @@ const App: React.FC = () => {
           if (prev === SkyState.DAY) return SkyState.SUNSET;
           if (prev === SkyState.SUNSET) return SkyState.NIGHT;
           if (prev === SkyState.NIGHT) return SkyState.STORM;
-          if (prev === SkyState.STORM) return SkyState.AUTO;
+          if (prev === SkyState.STORM) return SkyState.SNOW;
+          if (prev === SkyState.SNOW) return SkyState.AUTO;
           return SkyState.DAY;
       });
   };
@@ -302,6 +413,17 @@ const App: React.FC = () => {
         boostInventory={boostInventory}
         activeBoosts={activeBoosts}
         onToggleBoost={toggleActiveBoost}
+        // Music Props Pass-through
+        musicCurrentTrackIndex={musicCurrentTrackIndex}
+        musicIsPlaying={musicIsPlaying}
+        musicIsShuffle={musicIsShuffle}
+        musicIsLoop={musicIsLoop}
+        onMusicPlayPause={handleMusicPlayPause}
+        onMusicNext={handleMusicNext}
+        onMusicPrev={handleMusicPrev}
+        onMusicSelect={handleMusicSelect}
+        onMusicToggleShuffle={handleMusicToggleShuffle}
+        onMusicToggleLoop={handleMusicToggleLoop}
       />
 
       {gameState === GameState.SHOP && (

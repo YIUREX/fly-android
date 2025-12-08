@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef, useCallback } from 'react';
-import { GameState, Player, Missile, Particle, Coin, PowerUp, PowerUpType, Vector, Entity, Cloud, Star, SkyState, Ally, BoostType, TrailStyle, RainDrop } from '../types';
+import { GameState, Player, Missile, Particle, Coin, PowerUp, PowerUpType, Vector, Entity, Cloud, Star, SkyState, Ally, BoostType, TrailStyle, RainDrop, SnowFlake } from '../types';
 import { GAME_CONFIG, POWERUP_COLORS, PLANE_MODELS, PLANE_SKINS, TRAILS, DEATH_EFFECTS, SKY_COLORS } from '../constants';
 import { vecAdd, vecSub, vecMult, vecNorm, vecLen, dist, randomRange, lerp, lerpColor, soundManager } from '../utils';
 
@@ -32,6 +32,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
   currentTrailId,
   currentDeathEffectId,
   addCoins,
+  activePowerUps,
   setActivePowerUps,
   skyState,
   reviveSignal,
@@ -73,17 +74,21 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
   const cloudsRef = useRef<Cloud[]>([]);
   const starsRef = useRef<Star[]>([]);
   const raindropsRef = useRef<RainDrop[]>([]);
+  const snowflakesRef = useRef<SnowFlake[]>([]);
 
   const cycleFrameRef = useRef(0);
   const stormIntensityRef = useRef(0); // 0 to 1
+  const snowIntensityRef = useRef(0); // 0 to 1
   const isStormingInAutoRef = useRef(false);
-  const autoStormTimerRef = useRef(0);
+  const isSnowingInAutoRef = useRef(false);
+  const autoWeatherTimerRef = useRef(0);
   const lightningTimerRef = useRef(0);
   const lightningAlphaRef = useRef(0);
   const isRainPlayingRef = useRef(false);
   
   const frameCountRef = useRef(0);
   const scoreRef = useRef(0);
+  const scoreMissionAccumulatorRef = useRef(0);
   const coinsCollectedRef = useRef(0);
   const gameTimeRef = useRef(0);
 
@@ -123,6 +128,19 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         });
     }
     raindropsRef.current = newRain;
+
+    // Initialize Snow
+    const newSnow: SnowFlake[] = [];
+    for(let i=0; i<200; i++) {
+        newSnow.push({
+            x: Math.random() * 2000,
+            y: Math.random() * 2000,
+            size: Math.random() * 3 + 1,
+            speed: Math.random() * 2 + 1,
+            drift: Math.random() * Math.PI * 2
+        });
+    }
+    snowflakesRef.current = newSnow;
   }, []);
 
   const initGame = useCallback(() => {
@@ -156,14 +174,17 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     joystickRef.current = null;
 
     scoreRef.current = 0;
+    scoreMissionAccumulatorRef.current = 0;
     coinsCollectedRef.current = 0;
     frameCountRef.current = 0;
     gameTimeRef.current = 0;
     cycleFrameRef.current = 0;
     
     stormIntensityRef.current = 0;
+    snowIntensityRef.current = 0;
     isStormingInAutoRef.current = false;
-    autoStormTimerRef.current = 0;
+    isSnowingInAutoRef.current = false;
+    autoWeatherTimerRef.current = 0;
 
     lastTimeRef.current = performance.now();
     accumulatorRef.current = 0;
@@ -298,9 +319,14 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     }
     if (missilesRef.current.length > 0) {
         onMissionUpdate('missiles', missilesRef.current.length);
+        // Enemies destroyed by shockwave use custom death effect
+        missilesRef.current.forEach(m => {
+            createExplosion(m.pos, '#ef4444', 5, true);
+            scoreRef.current += 50; 
+            onMissionUpdate('score', 50);
+        });
     }
-    // Enemies destroyed by shockwave use custom death effect
-    missilesRef.current.forEach(m => createExplosion(m.pos, '#ef4444', 5, true));
+    
     missilesRef.current = [];
   };
 
@@ -411,21 +437,28 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     frameCountRef.current++;
     gameTimeRef.current += 1/60;
     
-    // Auto Cycle Logic with Probability of Storm
+    // Auto Cycle Logic with Probability of Storm or Snow
     if (skyState === SkyState.AUTO) {
         cycleFrameRef.current++;
         
-        // Storm Probability Logic
-        if (!isStormingInAutoRef.current) {
-            // Chance to start storm - REDUCED PROBABILITY
-            if (Math.random() < 0.0001) { // Reduced from 0.0002 to 0.0001
+        // Weather Probability Logic
+        if (!isStormingInAutoRef.current && !isSnowingInAutoRef.current) {
+            const roll = Math.random();
+            const weatherChance = 0.00001; // Base probability for event trigger per frame
+            
+            // Chance to start storm
+            if (roll < weatherChance) { 
                 isStormingInAutoRef.current = true;
-                autoStormTimerRef.current = 1200; // Duration of storm in frames (approx 20s)
+                autoWeatherTimerRef.current = 1200; // Duration of storm in frames (approx 20s)
+            } else if (roll < weatherChance * 2) { // Chance to start snow (equal probability, mutually exclusive range)
+                isSnowingInAutoRef.current = true;
+                autoWeatherTimerRef.current = 1500; // Snow lasts a bit longer
             }
         } else {
-            autoStormTimerRef.current--;
-            if (autoStormTimerRef.current <= 0) {
+            autoWeatherTimerRef.current--;
+            if (autoWeatherTimerRef.current <= 0) {
                 isStormingInAutoRef.current = false;
+                isSnowingInAutoRef.current = false;
             }
         }
         
@@ -435,10 +468,23 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         } else {
             stormIntensityRef.current = lerp(stormIntensityRef.current, 0, 0.01);
         }
+
+        // Lerp snow intensity
+        if (isSnowingInAutoRef.current) {
+            snowIntensityRef.current = lerp(snowIntensityRef.current, 1, 0.01);
+        } else {
+            snowIntensityRef.current = lerp(snowIntensityRef.current, 0, 0.01);
+        }
+
     } else if (skyState === SkyState.STORM) {
         stormIntensityRef.current = 1;
+        snowIntensityRef.current = 0;
+    } else if (skyState === SkyState.SNOW) {
+        stormIntensityRef.current = 0;
+        snowIntensityRef.current = 1;
     } else {
         stormIntensityRef.current = 0;
+        snowIntensityRef.current = 0;
     }
 
 
@@ -469,6 +515,21 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
             if (screenY > height/2 + 1000) {
                 d.y -= 2000;
                 d.x = cameraRef.current.x + Math.random() * 2000 - 1000;
+            }
+        });
+    }
+
+    // Snow Update
+    if (snowIntensityRef.current > 0) {
+        snowflakesRef.current.forEach(s => {
+            s.y += s.speed * 0.5; // Slower than rain
+            s.x += Math.sin(gameTimeRef.current + s.drift) * 0.5; // Sway
+            
+            // Check world bounds relative to camera to loop snow
+            const screenY = s.y - cameraRef.current.y;
+            if (screenY > height/2 + 500) {
+                s.y -= 1500;
+                s.x = cameraRef.current.x + Math.random() * 2000 - 1000;
             }
         });
     }
@@ -546,6 +607,8 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
                 // Ally kill uses custom death effect
                 createExplosion(target.pos, '#22d3ee', 10, true);
                 onMissionUpdate('missiles', 1);
+                scoreRef.current += 50; 
+                onMissionUpdate('score', 50);
             }
         } else {
             const orbitDist = 60;
@@ -572,6 +635,11 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         updateTrail(ally, allyTailPos, 4);
     });
     alliesRef.current = alliesRef.current.filter(a => !a.dead);
+
+    // REMOVE ALLIES ICON IF NONE LEFT
+    if (activePowerUps.includes(PowerUpType.ALLIES) && alliesRef.current.length === 0) {
+        setActivePowerUps(prev => prev.filter(p => p !== PowerUpType.ALLIES));
+    }
 
     // MISSILE UPDATE
     missilesRef.current.forEach(m => {
@@ -614,6 +682,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
           // Missile hits shield - Custom effect
           createExplosion(m.pos, '#60a5fa', 10, true);
           scoreRef.current += 50;
+          onMissionUpdate('score', 50);
         } else {
           p.dead = true;
           // Player death - Standard effect (false)
@@ -631,6 +700,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
           // Missile collision - Custom effect
           createExplosion(m.pos, '#facc15', 20, true);
           scoreRef.current += 100;
+          onMissionUpdate('score', 100);
           setScore(Math.floor(scoreRef.current));
           onMissionUpdate('missiles', 2);
         }
@@ -656,6 +726,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         setScore(Math.floor(scoreRef.current));
         addCoins(c.value);
         onMissionUpdate('coins', c.value);
+        onMissionUpdate('score', 10);
       }
       if (dist(c.pos, p.pos) > GAME_CONFIG.DESPAWN_DISTANCE) c.dead = true;
     });
@@ -673,10 +744,20 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     powerUpsRef.current = powerUpsRef.current.filter(pu => !pu.dead);
 
     if (!p.dead) {
-        scoreRef.current += 0.2;
+        const scoreInc = 0.2;
+        scoreRef.current += scoreInc;
+        scoreMissionAccumulatorRef.current += scoreInc;
+        
         setScore(Math.floor(scoreRef.current));
         if (frameCountRef.current % 60 === 0) {
             onMissionUpdate('time', 1);
+            
+            // Periodically update score mission progress
+            const pointsToAdd = Math.floor(scoreMissionAccumulatorRef.current);
+            if (pointsToAdd > 0) {
+                onMissionUpdate('score', pointsToAdd);
+                scoreMissionAccumulatorRef.current -= pointsToAdd;
+            }
         }
     }
 
@@ -686,7 +767,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
       pt.life -= 0.03;
     });
     particlesRef.current = particlesRef.current.filter(pt => pt.life > 0);
-  }, [setGameState, setScore, setCoinsCollected, addCoins, setActivePowerUps, skyState, onMissionUpdate]);
+  }, [setGameState, setScore, setCoinsCollected, addCoins, setActivePowerUps, skyState, onMissionUpdate, activePowerUps]);
 
   const update = useCallback((time: number) => {
     if (!canvasRef.current) return;
@@ -725,7 +806,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
             cloudsRef.current.forEach(c => {
                  c.x -= c.speed * 0.5; 
             });
-            // Update rain in menu too
+            // Update rain/snow in menu too
             if (skyState === SkyState.STORM || (skyState === SkyState.AUTO && stormIntensityRef.current > 0)) {
                 raindropsRef.current.forEach(d => {
                     d.y += d.speed;
@@ -734,6 +815,17 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
                     if (screenY > height/2 + 1000) {
                         d.y -= 2000;
                         d.x = cameraRef.current.x + Math.random() * 2000 - 1000;
+                    }
+                });
+            }
+            if (skyState === SkyState.SNOW || (skyState === SkyState.AUTO && snowIntensityRef.current > 0)) {
+                snowflakesRef.current.forEach(s => {
+                    s.y += s.speed * 0.5; 
+                    s.x += Math.sin(gameTimeRef.current + s.drift) * 0.5;
+                    const screenY = s.y - cameraRef.current.y;
+                    if (screenY > height/2 + 500) {
+                        s.y -= 1500;
+                        s.x = cameraRef.current.x + Math.random() * 2000 - 1000;
                     }
                 });
             }
@@ -776,16 +868,40 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
                     }
                 });
             } else if (style.type === 'sparkle') {
+                // Particle style for Stardust
                 trail.forEach((pos, i) => {
-                    if (i % 4 === 0) {
+                    // Draw every point or every other point
+                    if (i % 2 === 0) {
                         const screen = worldToScreen(pos, width, height);
-                        const size = lineWidth;
+                        // Fade out based on position in trail
+                        const opacity = i / trail.length;
+                        
+                        ctx.globalAlpha = opacity;
+                        ctx.fillStyle = style.color || '#f472b6';
+                        
+                        // Main particle
                         ctx.beginPath();
-                        ctx.moveTo(screen.x - size, screen.y);
-                        ctx.lineTo(screen.x + size, screen.y);
-                        ctx.moveTo(screen.x, screen.y - size);
-                        ctx.lineTo(screen.x, screen.y + size);
-                        ctx.stroke();
+                        // Randomize size slightly for particle effect
+                        const size = (Math.random() * 0.5 + 0.5) * lineWidth * 0.6; 
+                        // Add slight jitter for "dust" effect
+                        const jitterX = (Math.random() - 0.5) * 6;
+                        const jitterY = (Math.random() - 0.5) * 6;
+                        
+                        ctx.arc(screen.x + jitterX, screen.y + jitterY, size, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Occasional "shine" (diamond shape)
+                        if (i % 10 === 0) {
+                             ctx.beginPath();
+                             const shineSize = size * 2;
+                             ctx.moveTo(screen.x, screen.y - shineSize);
+                             ctx.lineTo(screen.x + shineSize, screen.y);
+                             ctx.lineTo(screen.x, screen.y + shineSize);
+                             ctx.lineTo(screen.x - shineSize, screen.y);
+                             ctx.fill();
+                        }
+                        
+                        ctx.globalAlpha = 1.0; // Reset alpha
                     }
                 });
             } else if (style.type === 'electric') {
@@ -1097,12 +1213,20 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     } else if (skyState === SkyState.STORM) {
         topColor = SKY_COLORS.STORM_TOP;
         bottomColor = SKY_COLORS.STORM_BOTTOM;
+    } else if (skyState === SkyState.SNOW) {
+        topColor = SKY_COLORS.SNOW_TOP;
+        bottomColor = SKY_COLORS.SNOW_BOTTOM;
     }
 
     // Blend in Storm if active in Auto Mode
     if (skyState === SkyState.AUTO && stormIntensityRef.current > 0) {
         topColor = lerpColor(topColor, SKY_COLORS.STORM_TOP, stormIntensityRef.current);
         bottomColor = lerpColor(bottomColor, SKY_COLORS.STORM_BOTTOM, stormIntensityRef.current);
+    }
+    // Blend in Snow if active in Auto Mode
+    if (skyState === SkyState.AUTO && snowIntensityRef.current > 0) {
+        topColor = lerpColor(topColor, SKY_COLORS.SNOW_TOP, snowIntensityRef.current);
+        bottomColor = lerpColor(bottomColor, SKY_COLORS.SNOW_BOTTOM, snowIntensityRef.current);
     }
 
     const grad = ctx.createLinearGradient(0, 0, 0, height);
@@ -1118,8 +1242,8 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     }
 
     // Stars
-    if (starOpacity > 0 || (skyState === SkyState.AUTO && stormIntensityRef.current < 1)) {
-      const displayOpacity = Math.max(0, starOpacity - stormIntensityRef.current); // Stars fade in storm
+    if (starOpacity > 0 || (skyState === SkyState.AUTO && stormIntensityRef.current < 1 && snowIntensityRef.current < 1)) {
+      const displayOpacity = Math.max(0, starOpacity - stormIntensityRef.current - snowIntensityRef.current); // Stars fade in storm/snow
       if (displayOpacity > 0) {
           ctx.fillStyle = 'white';
           starsRef.current.forEach(star => {
@@ -1148,15 +1272,18 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         let screenY = offsetY < -200 ? offsetY + 2000 : offsetY;
 
         if (screenX > -200 && screenX < width + 200 && screenY > -200 && screenY < height + 200) {
-            // Clouds get darker in storm
+            // Clouds get darker in storm, whiter in snow
             let cloudAlpha = cloud.opacity;
             let cloudColor = '255,255,255';
             
             if (skyState === SkyState.STORM || (skyState === SkyState.AUTO && stormIntensityRef.current > 0)) {
                 const intensity = (skyState === SkyState.STORM) ? 1 : stormIntensityRef.current;
                 cloudColor = lerpColor('#ffffff', '#334155', intensity).match(/\d+, \d+, \d+/)?.[0] || '100, 116, 139';
-                if (intensity > 0.5) cloudColor = '51, 65, 85'; // Slate-700
-                cloudAlpha = cloud.opacity + (intensity * 0.4); // Darker and more opaque
+                if (intensity > 0.5) cloudColor = '51, 65, 85'; 
+                cloudAlpha = cloud.opacity + (intensity * 0.4); 
+            } else if (skyState === SkyState.SNOW || (skyState === SkyState.AUTO && snowIntensityRef.current > 0)) {
+                const intensity = (skyState === SkyState.SNOW) ? 1 : snowIntensityRef.current;
+                cloudAlpha = cloud.opacity + (intensity * 0.3); // More opaque white clouds
             }
 
             // Simple cloud drawing
@@ -1182,13 +1309,30 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
             let screenX = offsetX < 0 ? offsetX + 2000 : offsetX;
             let screenY = offsetY < 0 ? offsetY + 2000 : offsetY;
             
-            // Optimization: only draw if on screen
             if (screenX > -50 && screenX < width + 50 && screenY > -50 && screenY < height + 50) {
                 ctx.moveTo(screenX, screenY);
                 ctx.lineTo(screenX - 5, screenY + d.length);
             }
         });
         ctx.stroke();
+    }
+
+    // Snow
+    if (skyState === SkyState.SNOW || (skyState === SkyState.AUTO && snowIntensityRef.current > 0)) {
+        const intensity = (skyState === SkyState.SNOW) ? 1 : snowIntensityRef.current;
+        ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * intensity})`;
+        snowflakesRef.current.forEach(s => {
+            const offsetX = (s.x - cameraRef.current.x) % 2000;
+            const offsetY = (s.y - cameraRef.current.y) % 2000;
+            let screenX = offsetX < 0 ? offsetX + 2000 : offsetX;
+            let screenY = offsetY < 0 ? offsetY + 2000 : offsetY;
+            
+            if (screenX > -50 && screenX < width + 50 && screenY > -50 && screenY < height + 50) {
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, s.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
     }
   };
 

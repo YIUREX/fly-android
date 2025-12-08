@@ -29,6 +29,7 @@ export enum SkyState {
   SUNSET = 'SUNSET',
   NIGHT = 'NIGHT',
   STORM = 'STORM',
+  SNOW = 'SNOW',
   AUTO = 'AUTO'
 }
 
@@ -153,6 +154,14 @@ export interface RainDrop {
   speed: number;
 }
 
+export interface SnowFlake {
+  x: number;
+  y: number;
+  size: number;
+  speed: number;
+  drift: number;
+}
+
 export interface Mission {
   id: number;
   description: string;
@@ -178,6 +187,11 @@ export interface GameStats {
   totalTime: number;
   totalMissilesDodged: number;
   maxScore: number;
+}
+
+export interface MusicTrack {
+  title: string;
+  src: string;
 }
 
 declare global {
