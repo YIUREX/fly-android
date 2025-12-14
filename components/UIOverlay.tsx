@@ -1,6 +1,7 @@
 
+
 import React, { useState } from 'react';
-import { GameState, PowerUpType, SkyState, Mission, Achievement, BoostType, MusicTrack } from '../types';
+import { GameState, PowerUpType, SkyState, Mission, Achievement, BoostType, MusicTrack, LeaderboardEntry } from '../types';
 import { POWERUP_LABELS, POWERUP_COLORS, BOOSTS, MUSIC_PLAYLIST } from '../constants';
 
 interface UIOverlayProps {
@@ -38,6 +39,20 @@ interface UIOverlayProps {
   onMusicSelect: (index: number) => void;
   onMusicToggleShuffle: () => void;
   onMusicToggleLoop: () => void;
+  
+  // Volume Props
+  musicVolume: number;
+  setMusicVolume: (vol: number) => void;
+  sfxVolume: number;
+  setSfxVolume: (vol: number) => void;
+
+  // Leaderboard Props
+  leaderboard: LeaderboardEntry[];
+  playerName: string;
+  setPlayerName: (name: string) => void;
+  
+  // Codes Props
+  onRedeemCode: (code: string) => { success: boolean; message: string; type?: 'poem' | 'reward' };
 }
 
 export const UIOverlay: React.FC<UIOverlayProps> = ({
@@ -72,20 +87,51 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   onMusicPrev,
   onMusicSelect,
   onMusicToggleShuffle,
-  onMusicToggleLoop
+  onMusicToggleLoop,
+  musicVolume,
+  setMusicVolume,
+  sfxVolume,
+  setSfxVolume,
+  leaderboard,
+  playerName,
+  setPlayerName,
+  onRedeemCode
 }) => {
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'audio' | 'ranking' | 'codes'>('audio');
+  const [codeInput, setCodeInput] = useState('');
+  const [codeMessage, setCodeMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
+  const [showPoem, setShowPoem] = useState(false);
   const isNewRecord = score > highScore && highScore > 0;
 
   const renderSkyIcon = () => {
       switch(skyState) {
           case SkyState.DAY: return '☀️';
           case SkyState.SUNSET: return '🌅';
+          case SkyState.PURPLE_SUNSET: return '🌆';
           case SkyState.NIGHT: return '🌙';
           case SkyState.STORM: return '⛈️';
           case SkyState.SNOW: return '❄️';
           case SkyState.AUTO: return '🔄';
       }
+  };
+
+  const handleRedeem = () => {
+      if (!codeInput.trim()) return;
+      const result = onRedeemCode(codeInput.trim());
+      
+      if (result.success) {
+          setCodeMessage({ text: result.message, type: 'success' });
+          if (result.type === 'poem') {
+              setShowPoem(true);
+              setShowSettings(false); // Close settings to show poem clearly
+          }
+          setCodeInput('');
+      } else {
+          setCodeMessage({ text: result.message, type: 'error' });
+      }
+
+      setTimeout(() => setCodeMessage(null), 3000);
   };
 
   const currentTrack = MUSIC_PLAYLIST[musicCurrentTrackIndex];
@@ -379,7 +425,56 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           </div>
       )}
 
-      {/* SETTINGS MODAL (Music) */}
+      {/* POEM MODAL */}
+      {showPoem && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-auto z-[80] bg-black/95 backdrop-blur-xl p-6">
+              <div className="w-full max-w-lg p-8 rounded-3xl relative border border-white/10 shadow-[0_0_50px_rgba(255,255,255,0.1)] text-center animate-fade-in overflow-y-auto max-h-full">
+                  <h2 className="text-3xl font-serif text-pink-300 mb-6 italic">Con locura, te quiero</h2>
+                  <div className="text-white/90 font-serif leading-relaxed space-y-4 text-lg whitespace-pre-line opacity-90">
+                    {`Te quiero.
+                    Dos palabras, ocho letras
+                    y aunque no lo creas
+                    yo si creo
+                    que es más que eso.
+
+                    Porque cuando te vas
+                    que te quedes deseo
+                    y volverte a ver espero.
+                    Y que cuando te veo
+                    miro a ver si me miras
+                    y así ver esos ojos perfectos.
+                    Es más que eso.
+
+                    ¿Porque cómo te explico
+                    que de ti le hablo a las estrellas?
+                    ¿Cómo te digo
+                    que el mar te conoce
+                    y aunque no lo veas
+                    mis deseos llevan mi nombre?
+                    Es más que eso.
+
+                    Y aunque esto nunca lo leas,
+                    y que yo jamás te lo diga,
+                    y eso tal vez me rompa,
+                    espero que en otra vida
+                    aunque no haya otra
+                    y en otro universo
+                    aunque no haya otro
+                    haya más suerte con nosotros.
+                    
+                    Con locura, te quiero.`}
+                  </div>
+                  <button 
+                    onClick={() => setShowPoem(false)}
+                    className="mt-8 px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-full font-serif italic transition-all"
+                  >
+                    Cerrar
+                  </button>
+              </div>
+          </div>
+      )}
+
+      {/* SETTINGS MODAL */}
       {showSettings && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-auto z-[70] bg-black/80 backdrop-blur-xl p-4">
               <div className="w-full max-w-md bg-slate-800 rounded-3xl border border-white/10 p-6 shadow-2xl">
@@ -393,12 +488,66 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                       </button>
                   </div>
 
-                  {/* Music Player */}
-                  <div className="bg-black/40 rounded-2xl p-4 border border-white/5">
-                      <div className="flex items-center gap-2 mb-4">
-                          <span className="text-2xl">🎵</span>
-                          <h3 className="text-lg font-bold text-white">Música</h3>
+                  {/* Settings Tabs */}
+                  <div className="flex bg-black/40 p-1 rounded-xl mb-6">
+                      <button 
+                        onClick={() => setSettingsTab('audio')} 
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${settingsTab === 'audio' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'}`}
+                      >
+                        🎵 Sonido
+                      </button>
+                      <button 
+                        onClick={() => setSettingsTab('ranking')} 
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${settingsTab === 'ranking' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'}`}
+                      >
+                        🏆 Ranking
+                      </button>
+                      <button 
+                        onClick={() => setSettingsTab('codes')} 
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${settingsTab === 'codes' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'}`}
+                      >
+                        🔐 Códigos
+                      </button>
+                  </div>
+
+                  {/* Music Player Tab */}
+                  {settingsTab === 'audio' && (
+                  <div className="bg-black/40 rounded-2xl p-4 border border-white/5 animate-fade-in">
+                      {/* Volume Controls */}
+                      <div className="mb-6 space-y-4">
+                          <div>
+                              <div className="flex justify-between text-xs font-bold text-white/70 mb-1">
+                                  <span>VOLUMEN MÚSICA</span>
+                                  <span>{Math.round(musicVolume * 100)}%</span>
+                              </div>
+                              <input 
+                                type="range" 
+                                min="0" 
+                                max="1" 
+                                step="0.01" 
+                                value={musicVolume} 
+                                onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+                                className="w-full h-2 bg-black/50 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                              />
+                          </div>
+                          <div>
+                              <div className="flex justify-between text-xs font-bold text-white/70 mb-1">
+                                  <span>VOLUMEN EFECTOS</span>
+                                  <span>{Math.round(sfxVolume * 100)}%</span>
+                              </div>
+                              <input 
+                                type="range" 
+                                min="0" 
+                                max="1" 
+                                step="0.01" 
+                                value={sfxVolume} 
+                                onChange={(e) => setSfxVolume(parseFloat(e.target.value))}
+                                className="w-full h-2 bg-black/50 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                              />
+                          </div>
                       </div>
+
+                      <div className="w-full h-px bg-white/10 mb-6"></div>
 
                       <div className="bg-white/5 rounded-xl p-3 mb-4 flex flex-col items-center">
                           <p className="text-xs text-white/50 mb-1 tracking-widest uppercase">REPRODUCIENDO</p>
@@ -447,6 +596,94 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                           ))}
                       </div>
                   </div>
+                  )}
+
+                  {/* Ranking Tab */}
+                  {settingsTab === 'ranking' && (
+                  <div className="bg-black/40 rounded-2xl p-4 border border-white/5 animate-fade-in">
+                      <div className="mb-6">
+                          <label className="text-xs text-white/50 font-bold uppercase tracking-wider mb-2 block">TU NOMBRE</label>
+                          <div className="flex gap-2">
+                              <input 
+                                type="text" 
+                                value={playerName}
+                                onChange={(e) => setPlayerName(e.target.value)}
+                                maxLength={12}
+                                className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white font-bold focus:outline-none focus:border-cyan-400"
+                                placeholder="Piloto"
+                              />
+                          </div>
+                      </div>
+
+                      <div className="mb-2 flex justify-between items-end">
+                          <h3 className="text-lg font-bold text-yellow-400 flex items-center gap-2">🏆 Tu Top 10</h3>
+                      </div>
+                      
+                      <div className="bg-black/20 rounded-xl overflow-hidden border border-white/5">
+                          <table className="w-full text-sm">
+                              <thead>
+                                  <tr className="bg-white/5 text-white/50 text-xs">
+                                      <th className="p-2 text-left w-8">#</th>
+                                      <th className="p-2 text-left">Piloto</th>
+                                      <th className="p-2 text-right">Puntos</th>
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                  {leaderboard.length === 0 ? (
+                                      <tr>
+                                          <td colSpan={3} className="p-4 text-center text-white/30 text-xs italic">
+                                              Juega para registrar tu primer récord.
+                                          </td>
+                                      </tr>
+                                  ) : (
+                                      leaderboard.map((entry, index) => (
+                                          <tr key={index} className={`border-b border-white/5 ${entry.name === playerName ? 'bg-cyan-500/20 text-cyan-200 font-bold' : 'text-white/80'}`}>
+                                              <td className="p-2 w-8 text-center">{index + 1}</td>
+                                              <td className="p-2">{entry.name}</td>
+                                              <td className="p-2 text-right">{entry.score}</td>
+                                          </tr>
+                                      ))
+                                  )}
+                              </tbody>
+                          </table>
+                      </div>
+                      <p className="text-[10px] text-white/30 mt-2 text-center">Registra tu récord al terminar una partida.</p>
+                  </div>
+                  )}
+
+                  {/* Codes Tab */}
+                  {settingsTab === 'codes' && (
+                      <div className="bg-black/40 rounded-2xl p-4 border border-white/5 animate-fade-in flex flex-col items-center">
+                          <div className="mb-6 text-center">
+                              <div className="text-4xl mb-2">🔐</div>
+                              <h3 className="text-white font-bold text-lg">CÓDIGOS SECRETOS</h3>
+                              <p className="text-white/50 text-xs mt-1">Introduce un código para desbloquear contenido especial.</p>
+                          </div>
+                          
+                          <div className="w-full flex gap-2 mb-4">
+                              <input 
+                                type="text" 
+                                value={codeInput}
+                                onChange={(e) => setCodeInput(e.target.value)}
+                                className="flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white font-bold focus:outline-none focus:border-green-400 placeholder-white/20 text-center uppercase"
+                                placeholder="CÓDIGO"
+                              />
+                          </div>
+
+                          <button 
+                            onClick={handleRedeem}
+                            className="w-full py-3 bg-green-500 hover:bg-green-400 text-white rounded-xl font-bold shadow-lg transition-all active:scale-95"
+                          >
+                            CANJEAR
+                          </button>
+
+                          {codeMessage && (
+                              <div className={`mt-4 text-sm font-bold text-center animate-fade-in ${codeMessage.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                                  {codeMessage.text}
+                              </div>
+                          )}
+                      </div>
+                  )}
               </div>
           </div>
       )}

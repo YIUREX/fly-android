@@ -1,6 +1,7 @@
 
+
 import React, { useEffect, useRef, useCallback } from 'react';
-import { GameState, Player, Missile, Particle, Coin, PowerUp, PowerUpType, Vector, Entity, Cloud, Star, SkyState, Ally, BoostType, TrailStyle, RainDrop, SnowFlake } from '../types';
+import { GameState, Player, Missile, Particle, Coin, PowerUp, PowerUpType, Vector, Entity, Cloud, Star, SkyState, Ally, BoostType, TrailStyle, RainDrop, SnowFlake, Rarity } from '../types';
 import { GAME_CONFIG, POWERUP_COLORS, PLANE_MODELS, PLANE_SKINS, TRAILS, DEATH_EFFECTS, SKY_COLORS } from '../constants';
 import { vecAdd, vecSub, vecMult, vecNorm, vecLen, dist, randomRange, lerp, lerpColor, soundManager } from '../utils';
 
@@ -305,6 +306,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
 
   const spawnShockwave = (pos: Vector) => {
     soundManager.playShockwave();
+    
     for(let i=0; i<36; i++) {
       const angle = (i / 36) * Math.PI * 2;
       particlesRef.current.push({
@@ -370,7 +372,8 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
       turnRate: GAME_CONFIG.MISSILE_TURN_RATE * difficultyMultiplier,
       speed: GAME_CONFIG.MISSILE_BASE_SPEED * difficultyMultiplier,
       wobbleOffset: Math.random() * 100,
-      trail: []
+      trail: [],
+      grazed: false
     });
   };
 
@@ -676,7 +679,31 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
       };
       updateTrail(m, missileTailPos, 2);
 
-      if (dist(m.pos, p.pos) < m.radius + p.radius - 5 && !p.dead) {
+      const d = dist(m.pos, p.pos);
+
+      // --- GRAZE MECHANIC ---
+      if (!m.grazed && !m.dead && !p.dead && d < GAME_CONFIG.GRAZE_DISTANCE) {
+          m.grazed = true;
+          // Graze reward
+          scoreRef.current += GAME_CONFIG.GRAZE_SCORE;
+          onMissionUpdate('score', GAME_CONFIG.GRAZE_SCORE);
+          
+          // Visual feedback (Cyan spark)
+          for(let i=0; i<3; i++) {
+              particlesRef.current.push({
+                id: Math.random().toString(),
+                pos: vecAdd(p.pos, vecMult(vecNorm(toPlayer), -p.radius)), // Between player and missile
+                vel: { x: (Math.random()-0.5)*5, y: (Math.random()-0.5)*5 },
+                life: 0.5,
+                maxLife: 0.5,
+                color: '#22d3ee', // Cyan
+                size: 2
+              });
+          }
+      }
+      // ----------------------
+
+      if (d < m.radius + p.radius - 5 && !p.dead) {
         if (p.shieldActive) {
           m.dead = true;
           // Missile hits shield - Custom effect
@@ -784,8 +811,6 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     accumulatorRef.current += dt;
 
     // --- RAIN SOUND CHECK (Runs every frame) ---
-    // Should rain if: (Sky is STORM) OR (Sky is AUTO AND Intensity > 0.1)
-    // AND NOT in Shop/Missions (to be clean)
     const isInGameOrMenu = gameState === GameState.PLAYING || gameState === GameState.MENU || gameState === GameState.PAUSED;
     const shouldRain = isInGameOrMenu && (skyState === SkyState.STORM || (skyState === SkyState.AUTO && stormIntensityRef.current > 0.1));
     
@@ -834,6 +859,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     }
 
     ctx.clearRect(0, 0, width, height);
+    
     drawBackground(ctx, width, height);
 
     if (gameState === GameState.PLAYING || gameState === GameState.PAUSED) {
@@ -868,29 +894,22 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
                     }
                 });
             } else if (style.type === 'sparkle') {
-                // Particle style for Stardust
                 trail.forEach((pos, i) => {
-                    // Draw every point or every other point
                     if (i % 2 === 0) {
                         const screen = worldToScreen(pos, width, height);
-                        // Fade out based on position in trail
                         const opacity = i / trail.length;
                         
                         ctx.globalAlpha = opacity;
                         ctx.fillStyle = style.color || '#f472b6';
                         
-                        // Main particle
                         ctx.beginPath();
-                        // Randomize size slightly for particle effect
                         const size = (Math.random() * 0.5 + 0.5) * lineWidth * 0.6; 
-                        // Add slight jitter for "dust" effect
                         const jitterX = (Math.random() - 0.5) * 6;
                         const jitterY = (Math.random() - 0.5) * 6;
                         
                         ctx.arc(screen.x + jitterX, screen.y + jitterY, size, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        // Occasional "shine" (diamond shape)
                         if (i % 10 === 0) {
                              ctx.beginPath();
                              const shineSize = size * 2;
@@ -901,7 +920,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
                              ctx.fill();
                         }
                         
-                        ctx.globalAlpha = 1.0; // Reset alpha
+                        ctx.globalAlpha = 1.0; 
                     }
                 });
             } else if (style.type === 'electric') {
@@ -912,7 +931,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
                 }
                 for (let i = 1; i < trail.length; i++) {
                     const p = worldToScreen(trail[i], width, height);
-                    const jitter = Math.random() * 4 - 2;
+                    const jitter = Math.random() * 6 - 3;
                     ctx.lineTo(p.x + jitter, p.y + jitter);
                 }
                 if (currentPos) {
@@ -1030,7 +1049,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
             x: m.pos.x - Math.cos(m.angle) * missileTailOffset,
             y: m.pos.y - Math.sin(m.angle) * missileTailOffset
         };
-        drawTrail(m.trail, {id:'missile', name:'', price:0, color:'rgba(248, 113, 113, 0.6)', widthScale:1, glow:false, type:'line'}, 6, missileTailPos);
+        drawTrail(m.trail, {id:'missile', name:'', price:0, rarity: Rarity.COMMON, color:'rgba(248, 113, 113, 0.6)', widthScale:1, glow:false, type:'line'}, 6, missileTailPos);
         
         const screenPos = worldToScreen(m.pos, width, height);
         ctx.save();
@@ -1206,6 +1225,9 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     } else if (skyState === SkyState.SUNSET) {
         topColor = SKY_COLORS.SUNSET_TOP;
         bottomColor = SKY_COLORS.SUNSET_BOTTOM;
+    } else if (skyState === SkyState.PURPLE_SUNSET) {
+        topColor = SKY_COLORS.PURPLE_SUNSET_TOP;
+        bottomColor = SKY_COLORS.PURPLE_SUNSET_BOTTOM;
     } else if (skyState === SkyState.NIGHT) {
         topColor = SKY_COLORS.NIGHT_TOP;
         bottomColor = SKY_COLORS.NIGHT_BOTTOM;
@@ -1272,7 +1294,7 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         let screenY = offsetY < -200 ? offsetY + 2000 : offsetY;
 
         if (screenX > -200 && screenX < width + 200 && screenY > -200 && screenY < height + 200) {
-            // Clouds get darker in storm, whiter in snow
+            // Clouds get darker in storm, whiter in snow, pink in purple sunset
             let cloudAlpha = cloud.opacity;
             let cloudColor = '255,255,255';
             
@@ -1284,6 +1306,9 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
             } else if (skyState === SkyState.SNOW || (skyState === SkyState.AUTO && snowIntensityRef.current > 0)) {
                 const intensity = (skyState === SkyState.SNOW) ? 1 : snowIntensityRef.current;
                 cloudAlpha = cloud.opacity + (intensity * 0.3); // More opaque white clouds
+            } else if (skyState === SkyState.PURPLE_SUNSET) {
+                cloudColor = '244, 114, 182'; // Pink 400
+                cloudAlpha = cloud.opacity + 0.1;
             }
 
             // Simple cloud drawing

@@ -1,11 +1,12 @@
 
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GameCanvas } from './components/GameCanvas';
 import { UIOverlay } from './components/UIOverlay';
 import { Shop } from './components/Shop';
-import { GameState, PowerUpType, SkyState, Mission, Achievement, GameStats, BoostType } from './types';
-import { ACHIEVEMENTS_LIST, MUSIC_PLAYLIST } from './constants';
-import { generateDailyMissions, soundManager } from './utils';
+import { GameState, PowerUpType, SkyState, Mission, Achievement, GameStats, BoostType, LootResult, LeaderboardEntry } from './types';
+import { ACHIEVEMENTS_LIST, MUSIC_PLAYLIST, LOOT_BOX_PRICE, MOCK_LEADERBOARD, PLANE_MODELS, PLANE_SKINS, TRAILS, DEATH_EFFECTS } from './constants';
+import { generateDailyMissions, soundManager, getLootItem } from './utils';
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
@@ -14,81 +15,90 @@ const App: React.FC = () => {
   const [activePowerUps, setActivePowerUps] = useState<PowerUpType[]>([]);
   const [reviveSignal, setReviveSignal] = useState(0);
 
-  // --- MUSIC ENGINE ---
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // --- AUDIO SETTINGS ---
+  const [musicVolume, setMusicVolume] = useState(() => {
+    const saved = localStorage.getItem('fly_vol_music');
+    const val = saved ? parseFloat(saved) : 0.5;
+    return isFinite(val) ? val : 0.5;
+  });
+  const [sfxVolume, setSfxVolume] = useState(() => {
+    const saved = localStorage.getItem('fly_vol_sfx');
+    const val = saved ? parseFloat(saved) : 0.3;
+    return isFinite(val) ? val : 0.3;
+  });
+
+  // --- MUSIC ENGINE (DOM REF APPROACH) ---
+  const audioRef = useRef<HTMLAudioElement>(null);
   const [musicCurrentTrackIndex, setMusicCurrentTrackIndex] = useState(0);
   const [musicIsPlaying, setMusicIsPlaying] = useState(false);
   const [musicIsShuffle, setMusicIsShuffle] = useState(false);
   const [musicIsLoop, setMusicIsLoop] = useState(false);
 
-  // Initialize Audio Element once
-  useEffect(() => {
-      audioRef.current = new Audio();
-      audioRef.current.volume = 0.5; // Music volume
-      
-      // Load initial track
-      if (MUSIC_PLAYLIST.length > 0) {
-          audioRef.current.src = MUSIC_PLAYLIST[0].src;
-      }
-
-      return () => {
-          if (audioRef.current) {
-              audioRef.current.pause();
-              audioRef.current = null;
-          }
-      };
-  }, []);
-
-  // Handle Track Source Change
-  useEffect(() => {
-      if (audioRef.current && MUSIC_PLAYLIST[musicCurrentTrackIndex]) {
-          // If the src is different, update it
-          if (audioRef.current.src !== MUSIC_PLAYLIST[musicCurrentTrackIndex].src) {
-              audioRef.current.src = MUSIC_PLAYLIST[musicCurrentTrackIndex].src;
-              if (musicIsPlaying) {
-                  audioRef.current.play().catch(e => console.warn("Audio play interrupted:", e));
-              }
-          }
-      }
-  }, [musicCurrentTrackIndex]);
-
-  // Handle Play/Pause Toggle
+  // Effect: Apply Volume Changes (Fluid & Immediate)
   useEffect(() => {
       if (audioRef.current) {
-          if (musicIsPlaying) {
-              audioRef.current.play().catch(e => console.warn("Audio play failed (interaction needed):", e));
-          } else {
-              audioRef.current.pause();
-          }
+          // Direct DOM manipulation for instant feedback
+          audioRef.current.volume = Math.max(0, Math.min(1, musicVolume));
       }
-  }, [musicIsPlaying]);
+      localStorage.setItem('fly_vol_music', musicVolume.toString());
+  }, [musicVolume]);
 
-  // Handle 'Ended' Event Logic (Next Song / Loop / Shuffle)
-  // Re-bind listener when dependencies change to avoid stale state
+  // Effect: Handle SFX Volume Changes
+  useEffect(() => {
+      soundManager.setVolume(Math.max(0, Math.min(1, sfxVolume)));
+      localStorage.setItem('fly_vol_sfx', sfxVolume.toString());
+  }, [sfxVolume]);
+
+  // Effect: Handle Track Changes & Play/Pause State
   useEffect(() => {
       const audio = audioRef.current;
       if (!audio) return;
 
-      const handleEnded = () => {
-          if (musicIsLoop) {
-              audio.currentTime = 0;
-              audio.play().catch(e => console.error(e));
-          } else if (musicIsShuffle) {
-              let nextIndex;
-              do {
-                  nextIndex = Math.floor(Math.random() * MUSIC_PLAYLIST.length);
-              } while (nextIndex === musicCurrentTrackIndex && MUSIC_PLAYLIST.length > 1);
-              setMusicCurrentTrackIndex(nextIndex);
-          } else {
-              // Play next sequential
-              setMusicCurrentTrackIndex(prev => (prev + 1) % MUSIC_PLAYLIST.length);
+      const track = MUSIC_PLAYLIST[musicCurrentTrackIndex];
+      if (!track) return;
+
+      // 1. Update Source if needed
+      // We check if the src matches to avoid reloading if it's the same track
+      const currentSrc = audio.getAttribute('src'); // Use getAttribute to avoid full URL resolving issues in comparison
+      if (currentSrc !== track.src && audio.src !== track.src) {
+          audio.src = track.src;
+          // If we change track and music should be playing, we must trigger play
+          if (musicIsPlaying) {
+              const playPromise = audio.play();
+              if (playPromise !== undefined) playPromise.catch(() => {});
           }
-      };
+      }
 
-      audio.addEventListener('ended', handleEnded);
-      return () => audio.removeEventListener('ended', handleEnded);
-  }, [musicIsLoop, musicIsShuffle, musicCurrentTrackIndex]); // Re-bind when modes change
+      // 2. Sync Play/Pause State
+      if (musicIsPlaying && audio.paused) {
+          const playPromise = audio.play();
+          if (playPromise !== undefined) {
+              playPromise.catch(e => console.warn("Auto-play prevented (user interaction needed):", e));
+          }
+      } else if (!musicIsPlaying && !audio.paused) {
+          audio.pause();
+      }
+  }, [musicCurrentTrackIndex, musicIsPlaying]); 
 
+  // Handle Track Ending (Loop/Shuffle)
+  const handleAudioEnded = () => {
+      if (musicIsLoop) {
+          if (audioRef.current) {
+              audioRef.current.currentTime = 0;
+              audioRef.current.play().catch(() => {});
+          }
+      } else if (musicIsShuffle) {
+          let nextIndex;
+          do {
+              nextIndex = Math.floor(Math.random() * MUSIC_PLAYLIST.length);
+          } while (nextIndex === musicCurrentTrackIndex && MUSIC_PLAYLIST.length > 1);
+          setMusicCurrentTrackIndex(nextIndex);
+      } else {
+          setMusicCurrentTrackIndex(prev => (prev + 1) % MUSIC_PLAYLIST.length);
+      }
+  };
+
+  // Music Controls
   const handleMusicPlayPause = () => setMusicIsPlaying(prev => !prev);
   
   const handleMusicNext = () => {
@@ -121,6 +131,10 @@ const App: React.FC = () => {
   // --- PERSISTENCE ---
   const [totalCoins, setTotalCoins] = useState<number>(() => {
     try { return parseInt(localStorage.getItem('fly_coins') || '0') || 0; } catch { return 0; }
+  });
+
+  const [redeemedCodes, setRedeemedCodes] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('fly_redeemed_codes') || '[]'); } catch { return []; }
   });
 
   const [ownedModels, setOwnedModels] = useState<string[]>(() => {
@@ -164,7 +178,19 @@ const App: React.FC = () => {
   });
   const [achievements, setAchievements] = useState<Achievement[]>(ACHIEVEMENTS_LIST);
 
+  // Leaderboard State
+  const [playerName, setPlayerName] = useState<string>(() => localStorage.getItem('fly_player_name') || 'Piloto');
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(() => {
+    try {
+        const saved = localStorage.getItem('fly_leaderboard');
+        return saved ? JSON.parse(saved) : []; 
+    } catch {
+        return [];
+    }
+  });
+
   useEffect(() => { localStorage.setItem('fly_coins', totalCoins.toString()); }, [totalCoins]);
+  useEffect(() => { localStorage.setItem('fly_redeemed_codes', JSON.stringify(redeemedCodes)); }, [redeemedCodes]);
   useEffect(() => { localStorage.setItem('fly_models', JSON.stringify(ownedModels)); }, [ownedModels]);
   useEffect(() => { localStorage.setItem('fly_skins', JSON.stringify(ownedSkins)); }, [ownedSkins]);
   useEffect(() => { localStorage.setItem('fly_trails', JSON.stringify(ownedTrails)); }, [ownedTrails]);
@@ -177,6 +203,7 @@ const App: React.FC = () => {
   useEffect(() => { localStorage.setItem('fly_skystate', skyState); }, [skyState]);
   useEffect(() => { localStorage.setItem('fly_streak', streak.toString()); }, [streak]);
   useEffect(() => { localStorage.setItem('fly_stats', JSON.stringify(stats)); }, [stats]);
+  useEffect(() => { localStorage.setItem('fly_player_name', playerName); }, [playerName]);
 
   useEffect(() => {
     const lastDate = localStorage.getItem('fly_mission_date');
@@ -209,6 +236,17 @@ const App: React.FC = () => {
           setTotalCoins(prev => prev + reward);
       }
   };
+
+  // CHECK FOR HERO ACHIEVEMENT
+  useEffect(() => {
+      const hasShield = activePowerUps.includes(PowerUpType.SHIELD);
+      const hasSpeed = activePowerUps.includes(PowerUpType.SPEED);
+      const hasAllies = activePowerUps.includes(PowerUpType.ALLIES);
+
+      if (hasShield && hasSpeed && hasAllies) {
+          unlockAchievement('hero_complex', 1000);
+      }
+  }, [activePowerUps]);
 
   const handleMissionUpdate = useCallback((type: string, amount: number) => {
       setMissions(prev => {
@@ -265,6 +303,24 @@ const App: React.FC = () => {
         } else {
             setStreak(0);
         }
+
+        // Leaderboard Update
+        setLeaderboard(prev => {
+            const finalScore = Math.floor(score);
+            if (finalScore === 0) return prev; 
+            
+            const newEntry: LeaderboardEntry = {
+                name: playerName || 'Piloto',
+                score: finalScore,
+                date: new Date().toLocaleDateString()
+            };
+            const newBoard = [...prev, newEntry]
+               .sort((a, b) => b.score - a.score)
+               .slice(0, 10);
+            
+            localStorage.setItem('fly_leaderboard', JSON.stringify(newBoard));
+            return newBoard;
+        });
      }
   }, [gameState]);
 
@@ -284,6 +340,31 @@ const App: React.FC = () => {
     }
   };
 
+  const handleOpenLootBox = (): LootResult | null => {
+      if (totalCoins < LOOT_BOX_PRICE) return null;
+      setTotalCoins(prev => prev - LOOT_BOX_PRICE);
+
+      const { item, type } = getLootItem();
+      
+      let isOwned = false;
+      if (type === 'model' && ownedModels.includes(item.id)) isOwned = true;
+      if (type === 'skin' && ownedSkins.includes(item.id)) isOwned = true;
+      if (type === 'trail' && ownedTrails.includes(item.id)) isOwned = true;
+      if (type === 'effect' && ownedEffects.includes(item.id)) isOwned = true;
+
+      if (isOwned) {
+          const refund = Math.floor(item.price * 0.3) || 100;
+          setTotalCoins(prev => prev + refund);
+          return { item, type, duplicate: true, refund };
+      } else {
+          if (type === 'model') setOwnedModels(prev => [...prev, item.id]);
+          if (type === 'skin') setOwnedSkins(prev => [...prev, item.id]);
+          if (type === 'trail') setOwnedTrails(prev => [...prev, item.id]);
+          if (type === 'effect') setOwnedEffects(prev => [...prev, item.id]);
+          return { item, type, duplicate: false, refund: 0 };
+      }
+  };
+
   const handleEquip = (type: 'model' | 'skin' | 'trail' | 'effect', id: string) => {
     if (type === 'model') setCurrentModelId(id);
     if (type === 'skin') setCurrentSkinId(id);
@@ -299,8 +380,48 @@ const App: React.FC = () => {
       });
   };
 
+  const handleRedeemCode = (inputCode: string): { success: boolean; message: string; type?: 'poem' | 'reward' } => {
+    const code = inputCode.trim();
+
+    if (code === 'Y1UR3Xp4r4Fly!') {
+        setOwnedModels(PLANE_MODELS.map(i => i.id));
+        setOwnedSkins(PLANE_SKINS.map(i => i.id));
+        setOwnedTrails(TRAILS.map(i => i.id));
+        setOwnedEffects(DEATH_EFFECTS.map(i => i.id));
+        return { success: true, message: '¡Modo Desarrollador Activado! Todo desbloqueado.', type: 'reward' };
+    }
+    if (code === 'GraciasEquipo') {
+        addCoins(1000);
+        return { success: true, message: '¡Gracias por tu ayuda! +1000 Monedas.', type: 'reward' };
+    }
+    if (code === 'TeQuiero') {
+        return { success: true, message: 'Poema desbloqueado.', type: 'poem' };
+    }
+
+    // New Single Use Codes
+    if (['SOYTESTER1000', '/GIVEME5000', 'RECLAMOMIS10000'].includes(code)) {
+        if (redeemedCodes.includes(code)) {
+            return { success: false, message: 'Este código ya ha sido canjeado.' };
+        }
+
+        let reward = 0;
+        if (code === 'SOYTESTER1000') reward = 1000;
+        if (code === '/GIVEME5000') reward = 5000;
+        if (code === 'RECLAMOMIS10000') reward = 10000;
+
+        addCoins(reward);
+        setRedeemedCodes(prev => [...prev, code]);
+        return { success: true, message: `¡Código canjeado! +${reward} Monedas.`, type: 'reward' };
+    }
+
+    return { success: false, message: 'Código inválido.' };
+  };
+
   const startGame = () => {
       soundManager.resumeContext();
+      // Ensure music is playing if enabled
+      if (!musicIsPlaying) setMusicIsPlaying(true);
+      
       const newInventory = { ...boostInventory };
       activeBoosts.forEach(b => {
           if (newInventory[b] > 0) newInventory[b]--;
@@ -325,7 +446,8 @@ const App: React.FC = () => {
       soundManager.resumeContext();
       setSkyState(prev => {
           if (prev === SkyState.DAY) return SkyState.SUNSET;
-          if (prev === SkyState.SUNSET) return SkyState.NIGHT;
+          if (prev === SkyState.SUNSET) return SkyState.PURPLE_SUNSET;
+          if (prev === SkyState.PURPLE_SUNSET) return SkyState.NIGHT;
           if (prev === SkyState.NIGHT) return SkyState.STORM;
           if (prev === SkyState.STORM) return SkyState.SNOW;
           if (prev === SkyState.SNOW) return SkyState.AUTO;
@@ -369,6 +491,13 @@ const App: React.FC = () => {
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-black">
+      {/* REACT AUDIO ELEMENT FOR RELIABLE CONTROL */}
+      <audio 
+          ref={audioRef} 
+          onEnded={handleAudioEnded}
+          onError={(e) => console.log('Audio load error', e)}
+      />
+
       <GameCanvas 
         gameState={gameState} 
         setGameState={setGameState}
@@ -424,6 +553,16 @@ const App: React.FC = () => {
         onMusicSelect={handleMusicSelect}
         onMusicToggleShuffle={handleMusicToggleShuffle}
         onMusicToggleLoop={handleMusicToggleLoop}
+        // Volume Props
+        musicVolume={musicVolume}
+        setMusicVolume={setMusicVolume}
+        sfxVolume={sfxVolume}
+        setSfxVolume={setSfxVolume}
+        // Leaderboard Props
+        leaderboard={leaderboard}
+        playerName={playerName}
+        setPlayerName={setPlayerName}
+        onRedeemCode={handleRedeemCode}
       />
 
       {gameState === GameState.SHOP && (
@@ -441,6 +580,7 @@ const App: React.FC = () => {
           onBuy={handleBuy}
           onEquip={handleEquip}
           onBack={() => setGameState(GameState.MENU)}
+          onOpenLootBox={handleOpenLootBox}
         />
       )}
     </div>

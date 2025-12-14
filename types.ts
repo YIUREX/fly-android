@@ -1,4 +1,5 @@
 
+
 export type Vector = { x: number; y: number };
 
 export enum GameState {
@@ -27,16 +28,25 @@ export enum BoostType {
 export enum SkyState {
   DAY = 'DAY',
   SUNSET = 'SUNSET',
+  PURPLE_SUNSET = 'PURPLE_SUNSET',
   NIGHT = 'NIGHT',
   STORM = 'STORM',
   SNOW = 'SNOW',
   AUTO = 'AUTO'
 }
 
+export enum Rarity {
+  COMMON = 'COMMON',
+  RARE = 'RARE',
+  EPIC = 'EPIC',
+  LEGENDARY = 'LEGENDARY'
+}
+
 export interface PlaneModel {
   id: string;
   name: string;
   price: number;
+  rarity: Rarity;
   path: string; // SVG Path string
   stats: {
       speed: number; // Multiplier (e.g. 1.0, 1.2)
@@ -49,6 +59,7 @@ export interface PlaneSkin {
   id: string;
   name: string;
   price: number;
+  rarity: Rarity;
   color: string;
   secondaryColor: string;
 }
@@ -57,6 +68,7 @@ export interface TrailStyle {
   id: string;
   name: string;
   price: number;
+  rarity: Rarity;
   color: string; 
   widthScale: number;
   glow: boolean;
@@ -67,6 +79,7 @@ export interface DeathEffectStyle {
   id: string;
   name: string;
   price: number;
+  rarity: Rarity;
   particleColor: string; 
   particleCount: number;
   soundType: 'standard' | 'digital' | 'heavy';
@@ -110,6 +123,7 @@ export interface Missile extends Entity {
   turnRate: number;
   speed: number;
   wobbleOffset: number;
+  grazed?: boolean; // New property for graze mechanic
 }
 
 export interface Coin extends Entity {
@@ -192,6 +206,19 @@ export interface GameStats {
 export interface MusicTrack {
   title: string;
   src: string;
+}
+
+export interface LootResult {
+    item: PlaneModel | PlaneSkin | TrailStyle | DeathEffectStyle;
+    type: 'model' | 'skin' | 'trail' | 'effect';
+    duplicate: boolean;
+    refund: number;
+}
+
+export interface LeaderboardEntry {
+  name: string;
+  score: number;
+  date: string;
 }
 
 declare global {

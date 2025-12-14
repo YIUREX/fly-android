@@ -1,5 +1,6 @@
 
-import { Vector, Mission } from './types';
+import { Vector, Mission, Rarity, LootResult } from './types';
+import { PLANE_MODELS, PLANE_SKINS, TRAILS, DEATH_EFFECTS } from './constants';
 
 export const vecAdd = (v1: Vector, v2: Vector): Vector => ({ x: v1.x + v2.x, y: v1.y + v2.y });
 export const vecSub = (v1: Vector, v2: Vector): Vector => ({ x: v1.x - v2.x, y: v1.y - v2.y });
@@ -34,6 +35,46 @@ export const rectIntersect = (r1: any, r2: any) => {
              r2.bottom < r1.top);
 };
 
+// --- LOOT BOX SYSTEM ---
+export const getRarityColor = (rarity: Rarity) => {
+    switch(rarity) {
+        case Rarity.COMMON: return '#94a3b8'; // Slate 400
+        case Rarity.RARE: return '#3b82f6'; // Blue 500
+        case Rarity.EPIC: return '#a855f7'; // Purple 500
+        case Rarity.LEGENDARY: return '#eab308'; // Yellow 500
+        default: return '#ffffff';
+    }
+};
+
+export const getLootItem = (): { item: any, type: 'model' | 'skin' | 'trail' | 'effect' } => {
+    const roll = Math.random();
+    let rarity = Rarity.COMMON;
+    
+    if (roll < 0.05) rarity = Rarity.LEGENDARY; // 5%
+    else if (roll < 0.20) rarity = Rarity.EPIC; // 15%
+    else if (roll < 0.50) rarity = Rarity.RARE; // 30%
+    else rarity = Rarity.COMMON; // 50%
+
+    // Filter items by rarity from all pools
+    const pool = [
+        ...PLANE_MODELS.filter(i => i.rarity === rarity).map(i => ({...i, _type: 'model' as const})),
+        ...PLANE_SKINS.filter(i => i.rarity === rarity).map(i => ({...i, _type: 'skin' as const})),
+        ...TRAILS.filter(i => i.rarity === rarity).map(i => ({...i, _type: 'trail' as const})),
+        ...DEATH_EFFECTS.filter(i => i.rarity === rarity).map(i => ({...i, _type: 'effect' as const}))
+    ];
+
+    if (pool.length === 0) {
+        // Fallback if rarity pool is empty (shouldn't happen with current data)
+        return { item: PLANE_SKINS[0], type: 'skin' };
+    }
+
+    const selected = pool[Math.floor(Math.random() * pool.length)];
+    const type = selected._type;
+    // Remove temporary _type property before returning item
+    const { _type, ...item } = selected;
+    return { item, type };
+};
+
 // --- MISSION GENERATOR ---
 export const generateDailyMissions = (): Mission[] => {
   const missions: Mission[] = [
@@ -51,6 +92,14 @@ class SoundManager {
   rainNode: AudioBufferSourceNode | null = null;
   rainGain: GainNode | null = null;
   rainStopTimeout: any = null;
+  currentVolume: number = 0.3; // Default volume
+
+  setVolume(volume: number) {
+      this.currentVolume = volume;
+      if (this.masterGain) {
+          this.masterGain.gain.setValueAtTime(volume, this.ctx?.currentTime || 0);
+      }
+  }
 
   init() {
     if (!this.ctx) {
@@ -58,7 +107,7 @@ class SoundManager {
       if (AudioContextClass) {
         this.ctx = new AudioContextClass();
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.3; // Master volume
+        this.masterGain.gain.value = this.currentVolume; // Use stored volume
         this.masterGain.connect(this.ctx.destination);
       }
     }
