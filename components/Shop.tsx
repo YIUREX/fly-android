@@ -344,10 +344,10 @@ export const Shop: React.FC<ShopProps> = ({
                                       <p className="text-white/60 text-xs md:text-sm mb-6">Contiene cosméticos de cualquier rareza.</p>
                                       
                                       <div className="flex justify-center gap-3 md:gap-4 mb-8">
-                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-slate-400 mb-1"></div><span className="text-[9px] md:text-[10px] text-slate-400">50%</span></div>
-                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-blue-500 mb-1"></div><span className="text-[9px] md:text-[10px] text-blue-500">30%</span></div>
-                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-purple-500 mb-1"></div><span className="text-[9px] md:text-[10px] text-purple-500">15%</span></div>
-                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-yellow-500 mb-1"></div><span className="text-[9px] md:text-[10px] text-yellow-500">5%</span></div>
+                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-slate-400 mb-1"></div><span className="text-[9px] md:text-[10px] text-slate-400">75%</span></div>
+                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-blue-500 mb-1"></div><span className="text-[9px] md:text-[10px] text-blue-500">18%</span></div>
+                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-purple-500 mb-1"></div><span className="text-[9px] md:text-[10px] text-purple-500">5%</span></div>
+                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-yellow-500 mb-1"></div><span className="text-[9px] md:text-[10px] text-yellow-500">2%</span></div>
                                       </div>
 
                                       <button 
