@@ -228,7 +228,6 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
   useEffect(() => {
     const handleResize = () => { if (canvasRef.current) { canvasRef.current.width = window.innerWidth; canvasRef.current.height = window.innerHeight; } };
     window.addEventListener('resize', handleResize);
-    // Fix: replaced incorrect removeResizeListener with removeEventListener
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
@@ -352,7 +351,6 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         });
     }
 
-    // --- DIFFICULTY SCALING BASED ON MODE ---
     const difficultyMultiplier = gameMode === GameMode.CHILL ? 1 : (1 + Math.min(scoreRef.current / 3000, 1.2));
 
     if (frameCountRef.current % Math.floor(GAME_CONFIG.MISSILE_SPAWN_RATE / difficultyMultiplier) === 0) spawnMissile(width, height, difficultyMultiplier);
@@ -382,7 +380,6 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
     cameraRef.current.y = lerp(cameraRef.current.y, p.pos.y, 0.1);
     updateTrail(p, { x: p.pos.x - Math.cos(p.angle) * 18, y: p.pos.y - Math.sin(p.angle) * 18 }, 2);
 
-    // Legend Gold Bling
     if (p.skinId === 'legend_gold' && !p.dead && frameCountRef.current % 5 === 0) {
         particlesRef.current.push({
             id: Math.random().toString(),
@@ -401,7 +398,14 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         missilesRef.current.forEach(m => { const d = dist(ally.pos, m.pos); if (d < nearestDist) { nearestDist = d; target = m; } });
         if (target && nearestDist < 500) {
             ally.angle = Math.atan2(target.pos.y - ally.pos.y, target.pos.x - ally.pos.x);
-            if (nearestDist < 20) { target.dead = true; ally.dead = true; createExplosion(target.pos, '#22d3ee', 10, true); scoreRef.current += 50; onMissionUpdate('score', 50); }
+            if (nearestDist < 20) { 
+                target.dead = true; 
+                ally.dead = true; 
+                createExplosion(target.pos, '#22d3ee', 10, true); 
+                scoreRef.current += 50; 
+                onMissionUpdate('score', 50);
+                onMissionUpdate('missiles', 1); // Contar destrucción por aliados
+            }
         } else {
             const time = frameCountRef.current * 0.05 + (ally.orbitOffset || 0);
             const targetPos = { x: p.pos.x + Math.cos(time) * 60, y: p.pos.y + Math.sin(time) * 60 };
@@ -427,16 +431,33 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
       updateTrail(m, { x: m.pos.x - Math.cos(m.angle) * 10, y: m.pos.y - Math.sin(m.angle) * 10 }, 2);
       const d = dist(m.pos, p.pos);
       if (!m.grazed && !m.dead && !p.dead && d < GAME_CONFIG.GRAZE_DISTANCE) {
-          m.grazed = true; scoreRef.current += GAME_CONFIG.GRAZE_SCORE; onMissionUpdate('score', GAME_CONFIG.GRAZE_SCORE);
+          m.grazed = true; 
+          scoreRef.current += GAME_CONFIG.GRAZE_SCORE; 
+          onMissionUpdate('score', GAME_CONFIG.GRAZE_SCORE);
+          // La telemetría de App.tsx cuenta el dodge basándose en el score de 25
           for(let i=0; i<3; i++) particlesRef.current.push({ id: Math.random().toString(), pos: vecAdd(p.pos, vecMult(vecNorm(vecSub(p.pos, m.pos)), -p.radius)), vel: { x: (Math.random()-0.5)*5, y: (Math.random()-0.5)*5 }, life: 0.5, maxLife: 0.5, color: '#22d3ee', size: 2 });
       }
       if (d < m.radius + p.radius - 5 && !p.dead) {
-        if (p.shieldActive) { m.dead = true; createExplosion(m.pos, '#60a5fa', 10, true); scoreRef.current += 50; onMissionUpdate('score', 50); }
+        if (p.shieldActive) { 
+            m.dead = true; 
+            createExplosion(m.pos, '#60a5fa', 10, true); 
+            scoreRef.current += 50; 
+            onMissionUpdate('score', 50); 
+            onMissionUpdate('missiles', 1); // Contar destrucción por escudo
+        }
         else { p.dead = true; createExplosion(p.pos, '#f472b6', 40, false); soundManager.playGameOver(); setGameState(GameState.GAMEOVER); }
       }
       missilesRef.current.forEach(otherM => {
         if (m === otherM || otherM.dead) return;
-        if (dist(m.pos, otherM.pos) < m.radius + otherM.radius) { m.dead = true; otherM.dead = true; createExplosion(m.pos, '#facc15', 20, true); scoreRef.current += 100; onMissionUpdate('score', 100); setScore(Math.floor(scoreRef.current)); onMissionUpdate('missiles', 2); }
+        if (dist(m.pos, otherM.pos) < m.radius + otherM.radius) { 
+            m.dead = true; 
+            otherM.dead = true; 
+            createExplosion(m.pos, '#facc15', 20, true); 
+            scoreRef.current += 100; 
+            onMissionUpdate('score', 100); 
+            setScore(Math.floor(scoreRef.current)); 
+            onMissionUpdate('missiles', 2); // Contar destrucción por colisión mutua
+        }
       });
       if (dist(m.pos, p.pos) > GAME_CONFIG.DESPAWN_DISTANCE) m.dead = true;
     });
@@ -507,7 +528,6 @@ const GameCanvasComponent: React.FC<GameCanvasProps> = ({
         const model = PLANE_MODELS.find(m => m.id === p.modelId) || PLANE_MODELS[0];
         const skin = PLANE_SKINS.find(s => s.id === p.skinId) || PLANE_SKINS[0];
         
-        // Shiny Legend Gold Glow
         if (p.skinId === 'legend_gold') {
             ctx.shadowBlur = 15;
             ctx.shadowColor = '#FFD700';
