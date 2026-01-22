@@ -4,6 +4,94 @@ import { PLANE_MODELS, PLANE_SKINS, TRAILS, DEATH_EFFECTS, BOOSTS, LOOT_BOX_PRIC
 import { PlaneModel, PlaneSkin, TrailStyle, DeathEffectStyle, BoostItem, LootResult, Rarity } from '../types';
 import { getRarityColor } from '../utils';
 
+// --- SUB-COMPONENTE PARA PREVISUALIZAR ESTELAS ---
+const TrailPreview: React.FC<{ style: TrailStyle, size?: 'small' | 'large' }> = ({ style, size = 'small' }) => {
+    const isLarge = size === 'large';
+    const color = style.color === 'rainbow' ? 'url(#rainbow-grad)' : style.color;
+    const width = isLarge ? 8 : 4;
+    const glow = style.glow ? (style.color === 'rainbow' ? '#ff00ff' : style.color) : 'transparent';
+
+    const renderContent = () => {
+        // Un camino curvo que simula movimiento
+        const path = "M 5,25 Q 25,5 45,25 T 85,25";
+        
+        switch (style.type) {
+            case 'bubbles':
+                return [10, 30, 50, 70, 90].map((x, i) => (
+                    <circle key={i} cx={x} cy={20 + Math.sin(i) * 5} r={2 + i/2} fill={color} />
+                ));
+            case 'pixel':
+                return [10, 25, 40, 55, 70, 85].map((x, i) => (
+                    <rect key={i} x={x} y={20 + Math.sin(i) * 3} width={width} height={width} fill={color} />
+                ));
+            case 'sparkle':
+                return [10, 25, 40, 55, 70, 85].map((x, i) => (
+                    <g key={i} transform={`translate(${x}, ${25 + Math.cos(i) * 8})`}>
+                        <rect x="-2" y="-2" width="4" height="4" fill={color} transform="rotate(45)" />
+                        <rect x="-1" y="-4" width="2" height="8" fill="white" opacity="0.5" />
+                        <rect x="-4" y="-1" width="8" height="2" fill="white" opacity="0.5" />
+                    </g>
+                ));
+            case 'electric':
+                return <path d="M 5,25 L 20,15 L 35,30 L 50,10 L 65,35 L 90,20" fill="none" stroke={color} strokeWidth={width/2} strokeLinecap="round" />;
+            default:
+                return <path d={path} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeDasharray={style.type === 'bubbles' ? "1, 10" : "none"} />;
+        }
+    };
+
+    return (
+        <svg viewBox="0 0 100 50" className={`w-full ${isLarge ? 'h-24' : 'h-8'}`}>
+            <defs>
+                <linearGradient id="rainbow-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="red" />
+                    <stop offset="25%" stopColor="yellow" />
+                    <stop offset="50%" stopColor="green" />
+                    <stop offset="75%" stopColor="blue" />
+                    <stop offset="100%" stopColor="purple" />
+                </linearGradient>
+                <filter id="glow">
+                    <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                    <feMerge>
+                        <feMergeNode in="coloredBlur"/>
+                        <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                </filter>
+            </defs>
+            <g filter={style.glow ? "url(#glow)" : ""} stroke={style.glow ? glow : "none"}>
+                {renderContent()}
+            </g>
+        </svg>
+    );
+};
+
+// --- SUB-COMPONENTE PARA PREVISUALIZAR EXPLOSIONES ---
+const EffectPreview: React.FC<{ style: DeathEffectStyle, animate?: boolean }> = ({ style, animate = false }) => {
+    const color = style.particleColor === 'random' ? '#ff00ff' : style.particleColor;
+    
+    return (
+        <div className="relative w-full h-full flex items-center justify-center">
+            <div className={`absolute w-4 h-4 rounded-full ${animate ? 'animate-ping' : ''}`} style={{ backgroundColor: color }}></div>
+            {[...Array(12)].map((_, i) => (
+                <div 
+                    key={i}
+                    className="absolute w-2 h-2 rounded-full"
+                    style={{ 
+                        backgroundColor: color,
+                        opacity: 0.6,
+                        transform: `rotate(${i * 30}deg) translateY(${animate ? '-40px' : '-15px'}) scale(${animate ? 0 : 1})`,
+                        transition: animate ? 'all 0.8s cubic-bezier(0, 0, 0.2, 1) infinite' : 'none'
+                    }}
+                ></div>
+            ))}
+            {animate && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-1 h-1 bg-white rounded-full animate-ping" style={{ animationDuration: '0.4s' }}></div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 interface ShopProps {
   coins: number;
   ownedModels: string[];
@@ -36,8 +124,6 @@ export const Shop: React.FC<ShopProps> = ({
   const [lootState, setLootState] = useState<'idle' | 'opening' | 'revealed'>('idle');
   const [lootResult, setLootResult] = useState<LootResult | null>(null);
 
-  // --- PREVIEW DATA ---
-  const currentSkinData = PLANE_SKINS.find(s => s.id === currentSkinId) || PLANE_SKINS[0];
   const currentModelData = PLANE_MODELS.find(m => m.id === currentModelId) || PLANE_MODELS[0];
 
   const handleLootClick = () => {
@@ -49,9 +135,9 @@ export const Shop: React.FC<ShopProps> = ({
               setLootResult(result);
               setLootState('revealed');
           } else {
-              setLootState('idle'); // Should not happen if coins check passed
+              setLootState('idle');
           }
-      }, 1500); // Animation delay
+      }, 1500);
   };
 
   const resetLoot = () => {
@@ -60,7 +146,6 @@ export const Shop: React.FC<ShopProps> = ({
   };
 
   const renderItemCard = (item: any, type: MarketCategory, isOwned: boolean, isEquipped: boolean) => {
-      const isBoost = type === 'boost';
       const rarityColor = getRarityColor(item.rarity || Rarity.COMMON);
       
       return (
@@ -92,9 +177,13 @@ export const Shop: React.FC<ShopProps> = ({
                     </svg>
                 )}
                 {type === 'trail' && (
-                    <div style={{background: item.color === 'rainbow' ? 'linear-gradient(to right, red, orange, yellow, green, blue)' : item.color}} className="w-8 h-2 rounded-full"></div>
+                    <TrailPreview style={item} />
                 )}
-                {type === 'effect' && <div style={{color: item.particleColor === 'random' ? 'white' : item.particleColor}} className="font-bold text-xl">💥</div>}
+                {type === 'effect' && (
+                    <div className="w-10 h-10">
+                        <EffectPreview style={item} />
+                    </div>
+                )}
                 {type === 'boost' && <div className="text-2xl">{item.icon}</div>}
             </div>
             
@@ -117,8 +206,16 @@ export const Shop: React.FC<ShopProps> = ({
       let currentId = '';
 
       if (marketCategory === 'model') { items = PLANE_MODELS; ownedList = ownedModels; currentId = currentModelId; }
-      else if (marketCategory === 'skin') { items = PLANE_SKINS; ownedList = ownedSkins; currentId = currentSkinId; }
-      else if (marketCategory === 'trail') { items = TRAILS; ownedList = ownedTrails; currentId = currentTrailId; }
+      else if (marketCategory === 'skin') { 
+          items = PLANE_SKINS.filter(s => s.id !== 'legend_gold' || ownedSkins.includes('legend_gold')); 
+          ownedList = ownedSkins; 
+          currentId = currentSkinId; 
+      }
+      else if (marketCategory === 'trail') { 
+          items = TRAILS.filter(t => t.id !== 'gold_glitter' || ownedTrails.includes('gold_glitter')); 
+          ownedList = ownedTrails; 
+          currentId = currentTrailId; 
+      }
       else if (marketCategory === 'effect') { items = DEATH_EFFECTS; ownedList = ownedDeathEffects; currentId = currentDeathEffectId; }
       else { items = BOOSTS; }
 
@@ -138,7 +235,6 @@ export const Shop: React.FC<ShopProps> = ({
       let items: any[] = [];
       let currentId = '';
       
-      // Filter only owned items
       if (workshopCategory === 'model') { items = PLANE_MODELS.filter(i => ownedModels.includes(i.id)); currentId = currentModelId; }
       else if (workshopCategory === 'skin') { items = PLANE_SKINS.filter(i => ownedSkins.includes(i.id)); currentId = currentSkinId; }
       else if (workshopCategory === 'trail') { items = TRAILS.filter(i => ownedTrails.includes(i.id)); currentId = currentTrailId; }
@@ -166,13 +262,9 @@ export const Shop: React.FC<ShopProps> = ({
 
       return (
         <div className={`flex flex-col h-full ${mobile ? 'p-6' : ''}`}>
-            
             <div className="w-full aspect-square bg-black/40 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden border border-white/5 shadow-inner">
-                {/* Rarity Glow Background */}
                 <div className="absolute inset-0 opacity-20" style={{background: `radial-gradient(circle, ${getRarityColor(selectedItem.item.rarity || Rarity.COMMON)} 0%, transparent 70%)`}}></div>
-                
                 <div className="relative z-10 w-4/5 h-4/5 flex items-center justify-center">
-                    {/* Re-render the visual */}
                     {selectedItem.type === 'model' && (
                         <svg viewBox="-15 -15 80 80" className="w-full h-full drop-shadow-2xl">
                             <g transform="translate(25, 25) rotate(-90)">
@@ -187,8 +279,16 @@ export const Shop: React.FC<ShopProps> = ({
                             </g>
                         </svg>
                     )}
-                    {selectedItem.type === 'trail' && <div style={{background: selectedItem.item.color === 'rainbow' ? 'linear-gradient(to right, red, orange, yellow, green, blue)' : selectedItem.item.color}} className="w-full h-8 rounded-full shadow-lg"></div>}
-                    {selectedItem.type === 'effect' && <div style={{color: selectedItem.item.particleColor === 'random' ? 'white' : selectedItem.item.particleColor}} className="font-bold text-8xl drop-shadow-lg">💥</div>}
+                    {selectedItem.type === 'trail' && (
+                        <div className="w-full scale-150">
+                            <TrailPreview style={selectedItem.item} size="large" />
+                        </div>
+                    )}
+                    {selectedItem.type === 'effect' && (
+                        <div className="w-32 h-32">
+                            <EffectPreview style={selectedItem.item} animate={true} />
+                        </div>
+                    )}
                     {selectedItem.type === 'boost' && <span className="text-8xl drop-shadow-lg">{selectedItem.item.icon}</span>}
                 </div>
             </div>
@@ -204,19 +304,6 @@ export const Shop: React.FC<ShopProps> = ({
             <p className="text-white/60 text-sm mb-6 leading-relaxed">
                 {selectedItem.item.description || 'Mejora visual para tu avión.'}
             </p>
-
-            {selectedItem.type === 'model' && (
-                <div className="space-y-4 mb-6 w-full">
-                    <div>
-                        <div className="flex justify-between text-xs text-white/70 mb-1"><span>VELOCIDAD</span><span>{Math.round(selectedItem.item.stats.speed * 100)}%</span></div>
-                        <div className="w-full h-1.5 bg-black/50 rounded-full overflow-hidden"><div className="h-full bg-cyan-400" style={{width: `${(selectedItem.item.stats.speed/1.5)*100}%`}}></div></div>
-                    </div>
-                    <div>
-                        <div className="flex justify-between text-xs text-white/70 mb-1"><span>MANIOBRA</span><span>{Math.round(selectedItem.item.stats.turn * 100)}%</span></div>
-                        <div className="w-full h-1.5 bg-black/50 rounded-full overflow-hidden"><div className="h-full bg-purple-400" style={{width: `${(selectedItem.item.stats.turn/1.5)*100}%`}}></div></div>
-                    </div>
-                </div>
-            )}
 
             <div className="mt-auto w-full flex flex-col gap-3">
                 {selectedItem.type === 'boost' ? (
@@ -241,10 +328,10 @@ export const Shop: React.FC<ShopProps> = ({
                 ) : (
                     <button 
                     onClick={() => onBuy(selectedItem.type, selectedItem.item.id, selectedItem.item.price)}
-                    disabled={coins < selectedItem.item.price}
-                    className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${coins >= selectedItem.item.price ? 'bg-yellow-500 text-black hover:bg-yellow-400 shadow-lg' : 'bg-slate-700 text-slate-500'}`}
+                    disabled={coins < selectedItem.item.price || selectedItem.item.price === 0}
+                    className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${coins >= selectedItem.item.price && selectedItem.item.price > 0 ? 'bg-yellow-500 text-black hover:bg-yellow-400 shadow-lg' : 'bg-slate-700 text-slate-500'}`}
                     >
-                        <span>COMPRAR</span> <span className="bg-black/10 px-2 py-0.5 rounded text-xs">{selectedItem.item.price}💰</span>
+                        <span>{selectedItem.item.price === 0 ? 'BLOQUEADO' : 'COMPRAR'}</span> {selectedItem.item.price > 0 && <span className="bg-black/10 px-2 py-0.5 rounded text-xs">{selectedItem.item.price}💰</span>}
                     </button>
                 )}
 
@@ -261,68 +348,54 @@ export const Shop: React.FC<ShopProps> = ({
 
   return (
     <div className="absolute inset-0 z-20 flex flex-col-reverse md:flex-row bg-slate-900 text-white font-fredoka overflow-hidden h-screen w-screen">
-      
-      {/* MOBILE NAV / DESKTOP SIDEBAR */}
       <div className="w-full md:w-24 bg-black/40 border-t md:border-t-0 md:border-r border-white/10 flex flex-row md:flex-col items-center justify-evenly md:justify-start px-2 md:px-0 md:py-6 gap-1 md:gap-6 backdrop-blur-md z-30 shrink-0 h-20 md:h-full">
-          <div className="hidden md:block mb-4">
-              <span className="text-3xl">✈️</span>
-          </div>
-          
-          <button onClick={() => { setActiveSection('market'); setSelectedItem(null); }} className={`p-2 md:p-3 rounded-xl transition-all flex flex-col items-center min-w-[60px] md:min-w-0 ${activeSection === 'market' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'text-white/40 hover:bg-white/5'}`}>
-              <div className="text-2xl md:text-2xl">🛒</div>
-              <div className="text-[10px] md:text-[9px] font-bold">MERCADO</div>
+          <button onClick={() => { setActiveSection('market'); setSelectedItem(null); }} className={`p-2 md:p-3 rounded-xl transition-all flex flex-col items-center min-w-[60px] md:min-w-0 ${activeSection === 'market' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:bg-white/5'}`}>
+              <div className="text-2xl">🛒</div>
+              <div className="text-[10px] font-bold">MERCADO</div>
           </button>
-
-          <button onClick={() => { setActiveSection('workshop'); setSelectedItem(null); }} className={`p-2 md:p-3 rounded-xl transition-all flex flex-col items-center min-w-[60px] md:min-w-0 ${activeSection === 'workshop' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-white/40 hover:bg-white/5'}`}>
-              <div className="text-2xl md:text-2xl">🔧</div>
-              <div className="text-[10px] md:text-[9px] font-bold">TALLER</div>
+          <button onClick={() => { setActiveSection('workshop'); setSelectedItem(null); }} className={`p-2 md:p-3 rounded-xl transition-all flex flex-col items-center min-w-[60px] md:min-w-0 ${activeSection === 'workshop' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:bg-white/5'}`}>
+              <div className="text-2xl">🔧</div>
+              <div className="text-[10px] font-bold">TALLER</div>
           </button>
-
-          <button onClick={() => { setActiveSection('loot'); setSelectedItem(null); }} className={`p-2 md:p-3 rounded-xl transition-all flex flex-col items-center min-w-[60px] md:min-w-0 ${activeSection === 'loot' ? 'bg-yellow-500 text-white shadow-lg shadow-yellow-500/30' : 'text-white/40 hover:bg-white/5'}`}>
-              <div className="text-2xl md:text-2xl">🎁</div>
-              <div className="text-[10px] md:text-[9px] font-bold">CAJAS</div>
+          <button onClick={() => { setActiveSection('loot'); setSelectedItem(null); }} className={`p-2 md:p-3 rounded-xl transition-all flex flex-col items-center min-w-[60px] md:min-w-0 ${activeSection === 'loot' ? 'bg-yellow-500 text-white shadow-lg' : 'text-white/40 hover:bg-white/5'}`}>
+              <div className="text-2xl">🎁</div>
+              <div className="text-[10px] font-bold">CAJAS</div>
           </button>
-
-          <div className="md:mt-auto md:ml-0">
-              <button onClick={onBack} className="px-5 py-2 md:p-3 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all flex flex-col items-center justify-center gap-1 border border-red-500/30 shadow-lg shadow-red-500/10 min-w-[70px] md:min-w-0">
-                  <div className="text-2xl md:text-xl">🚪</div>
-                  <span className="text-[10px] md:text-[9px] font-bold">SALIR</span>
+          <div className="md:mt-auto">
+              <button onClick={onBack} className="px-5 py-2 md:p-3 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-all flex flex-col items-center border border-red-500/30">
+                  <div className="text-2xl">🚪</div>
+                  <span className="text-[10px] font-bold">SALIR</span>
               </button>
           </div>
       </div>
 
-      {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col p-4 md:p-6 relative overflow-hidden h-full">
-          {/* Header */}
           <div className="flex justify-between items-center mb-4 md:mb-6 shrink-0">
               <div>
-                  <h2 className="text-2xl md:text-3xl font-black italic tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
+                  <h2 className="text-2xl md:text-3xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
                       {activeSection === 'market' && 'MERCADO'}
                       {activeSection === 'workshop' && 'TALLER'}
                       {activeSection === 'loot' && 'SUMINISTROS'}
                   </h2>
-                  <p className="text-white/40 text-[10px] md:text-xs tracking-widest font-bold">HANGAR</p>
               </div>
-              <div className="bg-black/40 border border-yellow-500/30 px-4 py-1.5 md:px-6 md:py-2 rounded-full flex items-center gap-2 md:gap-3 shadow-[0_0_15px_rgba(234,179,8,0.1)]">
-                  <span className="text-xl md:text-2xl">💰</span>
-                  <span className="text-lg md:text-xl font-bold text-yellow-400 font-mono">{coins}</span>
+              <div className="bg-black/40 border border-yellow-500/30 px-4 py-1.5 rounded-full flex items-center gap-2">
+                  <span className="text-xl">💰</span>
+                  <span className="text-lg font-bold text-yellow-400 font-mono">{coins}</span>
               </div>
           </div>
 
           <div className="flex-1 flex gap-6 overflow-hidden min-h-0">
-              {/* Left Panel: Content Grid */}
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-                  {/* Category Tabs for Market/Workshop */}
                   {(activeSection === 'market' || activeSection === 'workshop') && (
-                      <div className="flex gap-2 mb-4 overflow-x-auto pb-2 shrink-0 scrollbar-hide">
+                      <div className="flex gap-2 mb-4 overflow-x-auto pb-2 shrink-0">
                           {['model', 'skin', 'trail', 'effect', ...(activeSection === 'market' ? ['boost'] : [])].map(cat => (
                               <button
                                 key={cat}
                                 onClick={() => activeSection === 'market' ? setMarketCategory(cat as any) : setWorkshopCategory(cat as any)}
-                                className={`px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold text-[10px] md:text-xs uppercase tracking-wider transition-all border whitespace-nowrap
+                                className={`px-3 py-1.5 rounded-lg font-bold text-[10px] uppercase border whitespace-nowrap
                                     ${(activeSection === 'market' ? marketCategory : workshopCategory) === cat 
                                         ? 'bg-white text-black border-white' 
-                                        : 'bg-black/30 text-white/50 border-white/10 hover:bg-white/5'}`}
+                                        : 'bg-black/30 text-white/50 border-white/10'}`}
                               >
                                   {cat === 'model' ? 'Aviones' : cat === 'skin' ? 'Pinturas' : cat === 'trail' ? 'Estelas' : cat === 'effect' ? 'Efectos' : 'Mejoras'}
                               </button>
@@ -330,60 +403,31 @@ export const Shop: React.FC<ShopProps> = ({
                       </div>
                   )}
 
-                  <div className="bg-black/20 rounded-2xl border border-white/5 p-2 md:p-4 flex-1 overflow-hidden relative min-h-0">
+                  <div className="bg-black/20 rounded-2xl border border-white/5 p-2 md:p-4 flex-1 overflow-hidden min-h-0">
                       {activeSection === 'market' && renderMarketGrid()}
-                      
                       {activeSection === 'workshop' && renderWorkshopGrid()}
-
                       {activeSection === 'loot' && (
                           <div className="h-full flex flex-col items-center justify-center relative p-4">
                               {lootState === 'idle' && (
-                                  <div className="text-center animate-float">
-                                      <div className="text-8xl md:text-[100px] drop-shadow-[0_0_30px_rgba(234,179,8,0.5)]">🎁</div>
+                                  <div className="text-center">
+                                      <div className="text-8xl md:text-[100px] animate-float">🎁</div>
                                       <h3 className="text-xl md:text-2xl font-bold text-yellow-400 mt-4">CAJA MISTERIOSA</h3>
-                                      <p className="text-white/60 text-xs md:text-sm mb-6">Contiene cosméticos de cualquier rareza.</p>
-                                      
-                                      <div className="flex justify-center gap-3 md:gap-4 mb-8">
-                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-slate-400 mb-1"></div><span className="text-[9px] md:text-[10px] text-slate-400">75%</span></div>
-                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-blue-500 mb-1"></div><span className="text-[9px] md:text-[10px] text-blue-500">18%</span></div>
-                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-purple-500 mb-1"></div><span className="text-[9px] md:text-[10px] text-purple-500">5%</span></div>
-                                          <div className="flex flex-col items-center"><div className="w-2 h-2 md:w-3 md:h-3 rounded-full bg-yellow-500 mb-1"></div><span className="text-[9px] md:text-[10px] text-yellow-500">2%</span></div>
-                                      </div>
-
                                       <button 
                                         onClick={handleLootClick}
                                         disabled={coins < LOOT_BOX_PRICE}
-                                        className={`px-6 py-3 md:px-8 md:py-4 rounded-full font-black text-lg md:text-xl shadow-xl transition-all transform hover:scale-105 active:scale-95
-                                            ${coins >= LOOT_BOX_PRICE 
-                                                ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white shadow-yellow-500/20' 
-                                                : 'bg-slate-700 text-slate-500 cursor-not-allowed'}
+                                        className={`px-6 py-3 mt-8 rounded-full font-black text-lg shadow-xl transition-all
+                                            ${coins >= LOOT_BOX_PRICE ? 'bg-yellow-500 text-white' : 'bg-slate-700 text-slate-500'}
                                         `}
                                       >
                                           ABRIR - {LOOT_BOX_PRICE} 💰
                                       </button>
                                   </div>
                               )}
-
-                              {lootState === 'opening' && (
-                                  <div className="text-6xl animate-ping">📦</div>
-                              )}
-
+                              {lootState === 'opening' && <div className="text-6xl animate-ping">📦</div>}
                               {lootState === 'revealed' && lootResult && (
                                   <div className="text-center animate-bounce-short">
-                                      <p className="text-white/50 text-sm uppercase tracking-widest mb-2">HAS CONSEGUIDO</p>
-                                      <div className="text-8xl mb-4 drop-shadow-2xl">{lootResult.type === 'effect' ? '💥' : lootResult.type === 'boost' ? (lootResult.item as BoostItem).icon : '✈️'}</div>
+                                      <div className="text-8xl mb-4">{lootResult.type === 'effect' ? '💥' : '✈️'}</div>
                                       <h3 className="text-3xl font-black text-white mb-1" style={{color: getRarityColor(lootResult.item.rarity || Rarity.COMMON)}}>{lootResult.item.name}</h3>
-                                      <span className="px-3 py-1 rounded text-xs font-bold bg-white/10" style={{color: getRarityColor(lootResult.item.rarity || Rarity.COMMON)}}>
-                                          {lootResult.item.rarity || 'COMÚN'}
-                                      </span>
-
-                                      {lootResult.duplicate && (
-                                          <div className="mt-6 bg-black/40 border border-yellow-500/30 p-3 rounded-lg">
-                                              <p className="text-yellow-400 font-bold text-sm">¡YA LO TENÍAS!</p>
-                                              <p className="text-white/70 text-xs">Reembolso: +{lootResult.refund} 💰</p>
-                                          </div>
-                                      )}
-
                                       <button onClick={resetLoot} className="mt-8 px-6 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white font-bold">CONTINUAR</button>
                                   </div>
                               )}
@@ -391,17 +435,13 @@ export const Shop: React.FC<ShopProps> = ({
                       )}
                   </div>
               </div>
-
-              {/* Desktop Detail Panel */}
               <div className="hidden md:flex w-72 bg-black/20 rounded-2xl border border-white/5 p-5 flex-col shrink-0 h-full">
                   <DetailView />
               </div>
           </div>
       </div>
-
-      {/* Mobile Full Screen Detail Modal */}
       {selectedItem && (
-          <div className="md:hidden fixed inset-0 z-50 bg-slate-900/95 backdrop-blur-xl flex flex-col animate-fade-in h-screen w-screen">
+          <div className="md:hidden fixed inset-0 z-50 bg-slate-900/95 backdrop-blur-xl flex flex-col h-screen w-screen">
               <DetailView mobile={true} />
           </div>
       )}
