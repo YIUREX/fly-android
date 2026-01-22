@@ -219,13 +219,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-6 z-10 font-fredoka select-none overflow-hidden">
       
-      {isWatchingAd && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-[100] pointer-events-auto backdrop-blur-md">
-              <div className="text-6xl animate-spin mb-6">🎞️</div>
-              <h2 className="text-3xl font-black text-white italic tracking-widest animate-pulse">CARGANDO ANUNCIO...</h2>
-              <p className="text-white/40 mt-2 text-sm uppercase font-bold">Espera mientras se procesa el anuncio</p>
-          </div>
-      )}
+      {/* El overlay de cargando anuncio ha sido eliminado por petición del usuario para evitar interrupciones visuales */}
 
       {/* --- OVERLAY OSCURO PARA TUTORIAL --- */}
       {gameState === GameState.TUTORIAL && (
