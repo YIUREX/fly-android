@@ -35,7 +35,8 @@ const TrailPreview: React.FC<{ style: TrailStyle, size?: 'small' | 'large' }> = 
             case 'electric':
                 return <path d="M 5,25 L 20,15 L 35,30 L 50,10 L 65,35 L 90,20" fill="none" stroke={color} strokeWidth={width/2} strokeLinecap="round" />;
             default:
-                return <path d={path} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeDasharray={style.type === 'bubbles' ? "1, 10" : "none"} />;
+                // Fixed: Removed unreachable 'style.type === "bubbles"' check to resolve TS overlap error since bubbles is handled above
+                return <path d={path} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeDasharray="none" />;
         }
     };
 
